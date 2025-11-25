@@ -101,7 +101,7 @@ class _MainScreenState extends State<MainScreen> {
                           crossAxisAlignment: CrossAxisAlignment.stretch,
                           children: [
                             _buildDashboardCard(
-                              title: 'Visão Geral do Projeto', 
+                              title: 'Visão Geral do Projeto',
                               content: 'Aqui você verá um resumo dos seus projetos.',
                               icon: CupertinoIcons.graph_square,
                             ),
