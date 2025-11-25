@@ -41,8 +41,8 @@ class _MainScreenState extends State<MainScreen> {
                 begin: Alignment.topCenter,
                 end: Alignment.bottomCenter,
                 colors: [
-                  Color(0xFF8B0000), // Darker Red
-                  Color(0xFF220000), // Very Dark Red/Black
+                  Color(0xFFFFFFFF), // Darker Red
+                  Color(0xFFD5D2D2), // Very Dark Red/Black
                 ],
               ),
             ),
