@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
+import 'package:flutter/services.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 
@@ -7,14 +9,43 @@ import 'package:juggering/screens/main-screen.dart';
 
 import 'firebase_options.dart';
 
-
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  await Firebase.initializeApp(
 
+  await Firebase.initializeApp(
     options: DefaultFirebaseOptions.currentPlatform,
   );
+
+  await _enableHighRefreshRate();
+
+  _optimizePerformance();
+
   runApp(const AuthApp());
+}
+
+Future<void> _enableHighRefreshRate() async {
+  try {
+    await SystemChrome.setEnabledSystemUIMode(
+      SystemUiMode.edgeToEdge,
+      overlays: [SystemUiOverlay.top],
+    );
+
+    await SystemChrome.setPreferredOrientations([
+      DeviceOrientation.portraitUp,
+      DeviceOrientation.portraitDown,
+    ]);
+  } catch (e) {
+    debugPrint('Error enabling high refresh rate: $e');
+  }
+}
+
+void _optimizePerformance() {
+  if (const bool.fromEnvironment('dart.vm.product')) {
+    debugPaintSizeEnabled = false;
+    debugPaintBaselinesEnabled = false;
+    debugPaintLayerBordersEnabled = false;
+    debugRepaintRainbowEnabled = false;
+  }
 }
 
 class AuthApp extends StatelessWidget {
@@ -23,27 +54,92 @@ class AuthApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'VOPEC Engenharia Auth',
+      title: 'VOPEC Engenharia',
       theme: ThemeData(
-        // tema base caso a tela não carregue
         colorScheme: ColorScheme.fromSeed(seedColor: Colors.red),
         useMaterial3: true,
-        fontFamily: 'SF Pro Display', // fonte
+        fontFamily: 'SF Pro Display',
+
+        splashFactory: InkRipple.splashFactory,
+
+        pageTransitionsTheme: const PageTransitionsTheme(
+          builders: {
+            TargetPlatform.android: CupertinoPageTransitionsBuilder(),
+            TargetPlatform.iOS: CupertinoPageTransitionsBuilder(),
+          },
+        ),
       ),
-      // auth
+
+      debugShowCheckedModeBanner: false,
+
       home: StreamBuilder<User?>(
         stream: FirebaseAuth.instance.authStateChanges(),
         builder: (context, snapshot) {
           if (snapshot.connectionState == ConnectionState.waiting) {
-            return const Scaffold(body: Center(child: CircularProgressIndicator()));
+            return const _LoadingScreen();
           }
           if (snapshot.hasData) {
-            return const MainScreen(); // vai pra tela inicial quando o user ta logado
+            return const MainScreen(); // Tela inicial quando logado
           }
-          return const LoginScreen(); // se nao tiver logado volta pra tela de login
+          return const LoginScreen(); // Tela de login
         },
       ),
-      debugShowCheckedModeBanner: false,
+    );
+  }
+}
+
+class _LoadingScreen extends StatelessWidget {
+  const _LoadingScreen();
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      body: Container(
+        decoration: const BoxDecoration(
+          gradient: LinearGradient(
+            begin: Alignment.topCenter,
+            end: Alignment.bottomCenter,
+            colors: [
+              Color(0xFF7A1E1E),
+              Color(0xFF4A0E0E),
+              Color(0xFF2A0808),
+            ],
+            stops: [0.0, 0.5, 1.0],
+          ),
+        ),
+        child: const Center(
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              // Logo
+              CircleAvatar(
+                radius: 50,
+                backgroundColor: Colors.transparent,
+                backgroundImage: AssetImage('assets/images/vopec_icon.png'),
+              ),
+              SizedBox(height: 24),
+
+              SizedBox(
+                width: 40,
+                height: 40,
+                child: CircularProgressIndicator(
+                  strokeWidth: 3,
+                  valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                ),
+              ),
+              SizedBox(height: 16),
+              Text(
+                'Carregando...',
+                style: TextStyle(
+                  color: Colors.white70,
+                  fontSize: 16,
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
     );
   }
 }
