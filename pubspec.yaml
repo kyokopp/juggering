@@ -1,5 +1,5 @@
 name: juggering
-description: "A new Flutter project."
+description: "PUC PROJECT BY PPOOLAR AND RYUUKES"
 publish_to: 'none'
 
 version: 1.0.0+1
@@ -9,6 +9,7 @@ environment:
 dependencies:
   flutter:
     sdk: flutter
+  intl: ^0.20.2
 
   cupertino_icons: ^1.0.8
   firebase_core: ^4.2.1
@@ -43,5 +44,5 @@ flutter:
   fonts:
     - family: SFPRODISPLAYREGULAR
       fonts:
-        - asset: assets/fonts/SFPRODISPLAYREGULAR.OTF
+        - asset: assets/fonts/SFPRODISPLAYREGULAR.otf
         - asset: assets/fonts/SF-PRO.ttf

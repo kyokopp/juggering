@@ -11,7 +11,8 @@
         "cupertino_icons",
         "firebase_auth",
         "firebase_core",
-        "flutter"
+        "flutter",
+        "intl"
       ],
       "devDependencies": [
         "flutter_launcher_icons",
@@ -96,6 +97,15 @@
       "name": "cupertino_icons",
       "version": "1.0.8",
       "dependencies": []
+    },
+    {
+      "name": "intl",
+      "version": "0.20.2",
+      "dependencies": [
+        "clock",
+        "meta",
+        "path"
+      ]
     },
     {
       "name": "flutter",

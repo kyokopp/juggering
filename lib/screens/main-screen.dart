@@ -2,12 +2,15 @@ import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:intl/intl.dart';
 import 'contacts_screen.dart';
 import 'profile_screen.dart';
+import 'package:juggering/screens/projects_screens.dart';
 import '../services/contact_service.dart';
 import '../services/contact_model.dart';
+import '../services/project_service.dart';
+import '../services/project_model.dart';
 import 'package:juggering/screens/responsive.dart';
-
 
 class MainScreen extends StatefulWidget {
   const MainScreen({super.key});
@@ -18,15 +21,26 @@ class MainScreen extends StatefulWidget {
 
 class _MainScreenState extends State<MainScreen> {
   bool _isSidebarOpen = false;
+
+  // Services
   late final ContactService _contactService;
+  late final ProjectService _projectService;
+
+  // Streams
   late final Stream<List<Contact>> _favoritesStream;
+  late final Stream<List<Project>> _dashboardProjectsStream;
+
   String? _cachedFirstName;
 
   @override
   void initState() {
     super.initState();
     _contactService = ContactService();
+    _projectService = ProjectService();
+
     _favoritesStream = _contactService.getFavoriteContacts();
+    _dashboardProjectsStream = _projectService.getDashboardProjects();
+
     _cacheUserName();
   }
 
@@ -57,6 +71,7 @@ class _MainScreenState extends State<MainScreen> {
             cachedFirstName: _cachedFirstName ?? 'Polaris',
             onMenuTap: _toggleSidebar,
             favoritesStream: _favoritesStream,
+            projectsStream: _dashboardProjectsStream,
           ),
 
           // Sidebar Dim Effect
@@ -72,7 +87,7 @@ class _MainScreenState extends State<MainScreen> {
               ),
             ),
 
-          // Animated Sidebar
+
           _AnimatedSidebar(
             isOpen: _isSidebarOpen,
             width: sidebarWidth,
@@ -93,16 +108,17 @@ class _MainContent extends StatelessWidget {
   final String cachedFirstName;
   final VoidCallback onMenuTap;
   final Stream<List<Contact>> favoritesStream;
+  final Stream<List<Project>> projectsStream;
 
   const _MainContent({
     required this.cachedFirstName,
     required this.onMenuTap,
     required this.favoritesStream,
+    required this.projectsStream,
   });
 
   @override
   Widget build(BuildContext context) {
-    // iOS Font Style
     const iosFont = TextStyle(fontFamily: '.SF Pro Text', color: Colors.white);
 
     return Container(
@@ -116,7 +132,6 @@ class _MainContent extends StatelessWidget {
       child: SafeArea(
         child: Column(
           children: [
-            // Top Container (Updated for better visibility and contrast)
             ClipRRect(
               borderRadius: const BorderRadius.only(
                 bottomLeft: Radius.circular(20),
@@ -127,7 +142,7 @@ class _MainContent extends StatelessWidget {
                 child: Container(
                   padding: const EdgeInsets.all(16.0),
                   decoration: BoxDecoration(
-                    color: CupertinoColors.systemGrey.withValues(alpha: 0.25), // Increased contrast
+                    color: CupertinoColors.systemGrey.withValues(alpha: 0.25),
                     border: Border(
                       bottom: BorderSide(color: Colors.white.withValues(alpha: 0.1)),
                     ),
@@ -135,10 +150,8 @@ class _MainContent extends StatelessWidget {
                   child: Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
-                      // Profile Shortcut
                       GestureDetector(
                         onTap: () {
-                          // Navigate to Profile Screen
                           Navigator.of(context).push(
                             CupertinoPageRoute(builder: (context) => const ProfileScreen()),
                           );
@@ -195,7 +208,6 @@ class _MainContent extends StatelessWidget {
               ),
             ),
 
-            // Dashboard Content
             Expanded(
               child: SingleChildScrollView(
                 padding: const EdgeInsets.all(16.0),
@@ -205,13 +217,14 @@ class _MainContent extends StatelessWidget {
                     children: [
                       // Favorites Section
                       _FavoritesSection(favoritesStream: favoritesStream),
+
                       const SizedBox(height: 16),
-                      const _DashboardCard(
-                        title: 'Próximas Tarefas',
-                        content: 'Nenhuma tarefa pendente para hoje.',
-                        icon: CupertinoIcons.list_bullet,
-                      ),
+
+                      // REPLACED: Ongoing Projects Card
+                      _ProjectsDashboardCard(projectsStream: projectsStream),
+
                       const SizedBox(height: 16),
+
                       const _DashboardCard(
                         title: 'Notificações',
                         content: 'Você não tem novas notificações.',
@@ -224,6 +237,83 @@ class _MainContent extends StatelessWidget {
             ),
           ],
         ),
+      ),
+    );
+  }
+}
+
+class _ProjectsDashboardCard extends StatelessWidget {
+  final Stream<List<Project>> projectsStream;
+  const _ProjectsDashboardCard({required this.projectsStream});
+
+  @override
+  Widget build(BuildContext context) {
+    const iosFont = TextStyle(fontFamily: '.SF Pro Text', color: Colors.white);
+    final dateFormat = DateFormat('dd/MM');
+
+    return Container(
+      padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        color: CupertinoColors.systemGrey.withValues(alpha: 0.15),
+        borderRadius: BorderRadius.circular(15),
+        border: Border.all(color: CupertinoColors.systemGrey2.withValues(alpha: 0.3), width: 0.5),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Icon(CupertinoIcons.briefcase_fill, color: Colors.blueAccent, size: 24),
+              const SizedBox(width: 10),
+              Text('Projetos em Andamento', style: iosFont.copyWith(fontSize: 18, fontWeight: FontWeight.bold)),
+            ],
+          ),
+          const SizedBox(height: 16),
+          StreamBuilder<List<Project>>(
+            stream: projectsStream,
+            builder: (context, snapshot) {
+              if (snapshot.connectionState == ConnectionState.waiting) return const Center(child: CupertinoActivityIndicator(color: Colors.white));
+              if (!snapshot.hasData || snapshot.data!.isEmpty) {
+                return Text('Nenhum projeto em andamento.', style: iosFont.copyWith(color: Colors.white38));
+              }
+
+              return Column(
+                children: snapshot.data!.map((project) => Container(
+                  margin: const EdgeInsets.only(bottom: 8),
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: Colors.white.withValues(alpha: 0.05),
+                    borderRadius: BorderRadius.circular(10),
+                    border: Border.all(color: Colors.white10),
+                  ),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(project.name, style: iosFont.copyWith(fontWeight: FontWeight.bold, fontSize: 14)),
+                            const SizedBox(height: 2),
+                            Text(project.description, maxLines: 1, overflow: TextOverflow.ellipsis, style: iosFont.copyWith(color: Colors.white54, fontSize: 12)),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Column(
+                        crossAxisAlignment: CrossAxisAlignment.end,
+                        children: [
+                          Text('Fim', style: iosFont.copyWith(fontSize: 10, color: Colors.white38)),
+                          Text(dateFormat.format(project.endDate), style: iosFont.copyWith(fontSize: 12, color: Colors.blueAccent, fontWeight: FontWeight.w600)),
+                        ],
+                      ),
+                    ],
+                  ),
+                )).toList(),
+              );
+            },
+          ),
+        ],
       ),
     );
   }
@@ -469,9 +559,7 @@ class _AnimatedSidebar extends StatelessWidget {
                     onTap: () {
                       onClose();
                       Navigator.of(context).push(
-                        CupertinoPageRoute(
-                          builder: (context) => const ContactsScreen(),
-                        ),
+                        CupertinoPageRoute(builder: (context) => const ContactsScreen()),
                       );
                     },
                   ),
@@ -480,8 +568,8 @@ class _AnimatedSidebar extends StatelessWidget {
                     label: 'Projetos',
                     onTap: () {
                       onClose();
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(content: Text('Navegar para Projetos')),
+                      Navigator.of(context).push(
+                        CupertinoPageRoute(builder: (context) => const ProjectsScreen()),
                       );
                     },
                   ),
