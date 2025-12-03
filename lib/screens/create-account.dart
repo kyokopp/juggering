@@ -1,6 +1,8 @@
+import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'responsive.dart';
 
 class CreateAccountScreen extends StatefulWidget {
@@ -10,39 +12,76 @@ class CreateAccountScreen extends StatefulWidget {
   State<CreateAccountScreen> createState() => _CreateAccountScreenState();
 }
 
-class _CreateAccountScreenState extends State<CreateAccountScreen> with TickerProviderStateMixin {
+class _CreateAccountScreenState extends State<CreateAccountScreen>
+    with SingleTickerProviderStateMixin {
   final _formKey = GlobalKey<FormState>();
   final _nameController = TextEditingController();
   final _emailController = TextEditingController();
+  final _phoneController = TextEditingController();
   final _passwordController = TextEditingController();
   final _confirmPasswordController = TextEditingController();
+
+  final _nameFocusNode = FocusNode();
+  final _emailFocusNode = FocusNode();
+  final _phoneFocusNode = FocusNode();
+  final _passwordFocusNode = FocusNode();
+  final _confirmPasswordFocusNode = FocusNode();
 
   bool _isLoading = false;
   bool _showPassword = false;
   bool _showConfirmPassword = false;
+  int _passwordStrength = 0;
+
   late AnimationController _fadeController;
+  late Animation<double> _fadeAnimation;
+  late Animation<Offset> _slideAnimation;
+
+  static final _cardBg = const Color(0xFF1C1C1E).withValues(alpha: 0.6);
+  static final _borderColor = Colors.white.withValues(alpha: 0.1);
+  static final _fieldBg = Colors.black.withValues(alpha: 0.3);
+  static final _hintColor = Colors.white.withValues(alpha: 0.4);
+  static final _shadowColor = const Color(0xFFD32F2F).withValues(alpha: 0.4);
 
   @override
   void initState() {
     super.initState();
-    _fadeController = AnimationController(duration: const Duration(milliseconds: 800), vsync: this);
+    _enableHighRefreshRate();
+
+    _fadeController = AnimationController(
+      duration: const Duration(milliseconds: 600),
+      vsync: this,
+    );
+
+    _fadeAnimation = CurvedAnimation(
+      parent: _fadeController,
+      curve: Curves.easeOut,
+    );
+
+    _slideAnimation = Tween<Offset>(
+      begin: const Offset(0, 0.03),
+      end: Offset.zero,
+    ).animate(CurvedAnimation(
+      parent: _fadeController,
+      curve: Curves.easeOutCubic,
+    ));
+
     _fadeController.forward();
-    // OPTIMIZATION: This rebuilds the whole screen on every keystroke.
-    // It's okay for the password strength meter, but be aware of performance.
-    _passwordController.addListener(() => setState(() {}));
+
+    _passwordController.addListener(_updatePasswordStrength);
   }
 
-  @override
-  void dispose() {
-    _fadeController.dispose();
-    _nameController.dispose();
-    _emailController.dispose();
-    _passwordController.dispose();
-    _confirmPasswordController.dispose();
-    super.dispose();
+  void _enableHighRefreshRate() {
+    WidgetsBinding.instance.addPostFrameCallback((_) {});
   }
 
-  int _getPasswordStrength(String password) {
+  void _updatePasswordStrength() {
+    final newStrength = _calculatePasswordStrength(_passwordController.text);
+    if (newStrength != _passwordStrength) {
+      setState(() => _passwordStrength = newStrength);
+    }
+  }
+
+  int _calculatePasswordStrength(String password) {
     if (password.isEmpty) return 0;
     if (password.length < 6) return 1;
     if (password.length < 10) return 2;
@@ -51,38 +90,86 @@ class _CreateAccountScreenState extends State<CreateAccountScreen> with TickerPr
 
   Color _getStrengthColor(int strength) {
     switch (strength) {
-      case 0: return Colors.transparent;
-      case 1: return const Color(0xFFFF8A8A);
-      case 2: return const Color(0xFFFFB366);
-      case 3: return const Color(0xFF66CC66);
-      default: return Colors.transparent;
+      case 0:
+        return Colors.transparent;
+      case 1:
+        return const Color(0xFFFF453A);
+      case 2:
+        return const Color(0xFFFF9F0A);
+      case 3:
+        return const Color(0xFF32D74B);
+      default:
+        return Colors.transparent;
     }
   }
 
+  @override
+  void dispose() {
+    _fadeController.dispose();
+    _nameController.dispose();
+    _emailController.dispose();
+    _phoneController.dispose();
+    _passwordController.dispose();
+    _confirmPasswordController.dispose();
+    _nameFocusNode.dispose();
+    _emailFocusNode.dispose();
+    _phoneFocusNode.dispose();
+    _passwordFocusNode.dispose();
+    _confirmPasswordFocusNode.dispose();
+    super.dispose();
+  }
+
   void _handleSignUp() async {
-    // This will now actually work because we switched to TextFormField
+    FocusScope.of(context).unfocus();
+
     if (_formKey.currentState!.validate()) {
       setState(() => _isLoading = true);
       try {
-        UserCredential userCredential = await FirebaseAuth.instance.createUserWithEmailAndPassword(
+        // 1. Create Auth User
+        UserCredential userCredential =
+        await FirebaseAuth.instance.createUserWithEmailAndPassword(
           email: _emailController.text.trim(),
           password: _passwordController.text.trim(),
         );
 
         if (userCredential.user != null) {
-          await userCredential.user!.updateDisplayName(_nameController.text.trim());
+          // 2. Update Display Name
+          await userCredential.user!
+              .updateDisplayName(_nameController.text.trim());
+
+          // 3. Create Firestore Document with Phone & Default Role
+          await FirebaseFirestore.instance
+              .collection('users')
+              .doc(userCredential.user!.uid)
+              .set({
+            'phone': _phoneController.text.trim(),
+            'role': 'Usuário', // Default role
+            'email': _emailController.text.trim(),
+            'createdAt': FieldValue.serverTimestamp(),
+          });
         }
+
         if (mounted) {
           Navigator.of(context).pop();
           ScaffoldMessenger.of(context).showSnackBar(
-            // ... your snackbar code
-              const SnackBar(content: Text('Sucesso!')) // Placeholder for brevity
+            const SnackBar(
+              content: Text(
+                'Conta criada com sucesso!',
+                style: TextStyle(fontFamily: '.SF Pro Text'),
+              ),
+              backgroundColor: Colors.green,
+              duration: Duration(seconds: 2),
+            ),
           );
         }
       } on FirebaseAuthException catch (e) {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(content: Text(e.message ?? 'Erro'), backgroundColor: Colors.red)
+            SnackBar(
+              content: Text(e.message ?? 'Erro ao criar conta'),
+              backgroundColor: Colors.redAccent,
+              duration: const Duration(seconds: 3),
+            ),
           );
         }
       } finally {
@@ -93,114 +180,70 @@ class _CreateAccountScreenState extends State<CreateAccountScreen> with TickerPr
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: CupertinoNavigationBar(
-        // FIX 2: Changed withValues to withOpacity
-        backgroundColor: const Color(0xFF8B0000).withValues(alpha: .25),
-        leading: CupertinoNavigationBarBackButton(
-          color: CupertinoColors.white,
-          onPressed: () => Navigator.of(context).pop(),
-        ),
-        middle: const Text('Criar Conta', style: TextStyle(color: CupertinoColors.white)),
-        border: Border.all(color: Colors.transparent),
-      ),
-      body: Container(
-        decoration: const BoxDecoration(
-          gradient: LinearGradient(
-            begin: Alignment.topCenter,
-            end: Alignment.bottomCenter,
-            colors: [Color(0xFFAA2222), Color(0xFF8B0000), Color(0xFF330000)],
-            stops: [0.0, 0.5, 1.0],
+    const iosFont = TextStyle(
+      fontFamily: '.SF Pro Text',
+      color: Colors.white,
+    );
+
+    return GestureDetector(
+      onTap: () => FocusScope.of(context).unfocus(),
+      child: Scaffold(
+        extendBodyBehindAppBar: true,
+        appBar: CupertinoNavigationBar(
+          backgroundColor: Colors.transparent,
+          leading: CupertinoNavigationBarBackButton(
+            color: CupertinoColors.white,
+            onPressed: () => Navigator.of(context).pop(),
           ),
+          middle: Text(
+            'Criar Conta',
+            style: iosFont.copyWith(fontWeight: FontWeight.w600),
+          ),
+          border: Border.all(color: Colors.transparent),
         ),
-        child: Center(
-          child: SingleChildScrollView(
-            padding: const EdgeInsets.symmetric(horizontal: 24.0, vertical: 20),
-            child: ResponsiveContainer(
-              child: FadeTransition(
-                opacity: _fadeController,
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    // ... Title Texts ...
-                    const SizedBox(height: 36),
-                    Container(
-                      padding: const EdgeInsets.all(24),
-                      decoration: BoxDecoration(
-                        // FIX 2: withOpacity
-                        color: CupertinoColors.systemGrey.withValues(alpha: 0.12),
-                        borderRadius: BorderRadius.circular(16),
-                        border: Border.all(
-                          color: CupertinoColors.systemGrey2.withValues(alpha: 0.25),
-                          width: 1,
+        body: _BackgroundGradient(
+          child: Center(
+            child: SingleChildScrollView(
+              padding: const EdgeInsets.symmetric(
+                horizontal: 24.0,
+                vertical: 20,
+              ),
+              keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
+              child: ResponsiveContainer(
+                child: SlideTransition(
+                  position: _slideAnimation,
+                  child: FadeTransition(
+                    opacity: _fadeAnimation,
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        const SizedBox(height: 80),
+                        _SignUpForm(
+                          formKey: _formKey,
+                          nameController: _nameController,
+                          emailController: _emailController,
+                          phoneController: _phoneController, // Pass controller
+                          passwordController: _passwordController,
+                          confirmPasswordController: _confirmPasswordController,
+                          nameFocusNode: _nameFocusNode,
+                          emailFocusNode: _emailFocusNode,
+                          phoneFocusNode: _phoneFocusNode, // Pass focus node
+                          passwordFocusNode: _passwordFocusNode,
+                          confirmPasswordFocusNode: _confirmPasswordFocusNode,
+                          showPassword: _showPassword,
+                          showConfirmPassword: _showConfirmPassword,
+                          passwordStrength: _passwordStrength,
+                          isLoading: _isLoading,
+                          onTogglePassword: () =>
+                              setState(() => _showPassword = !_showPassword),
+                          onToggleConfirmPassword: () => setState(
+                                  () => _showConfirmPassword = !_showConfirmPassword),
+                          onSignUp: _handleSignUp,
+                          getStrengthColor: _getStrengthColor,
                         ),
-                        boxShadow: [
-                          BoxShadow(
-                            color: Colors.black.withValues(alpha: .1),
-                            blurRadius: 16,
-                            offset: const Offset(0, 4),
-                          ),
-                        ],
-                      ),
-                      child: Form(
-                        key: _formKey,
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.stretch,
-                          children: [
-                            _buildTextFieldWithIcon(
-                              controller: _nameController,
-                              placeholder: 'Nome Completo',
-                              icon: CupertinoIcons.person_fill,
-                              keyboardType: TextInputType.name,
-                              validator: (value) => value!.isEmpty ? 'Por favor, insira seu nome' : null,
-                            ),
-                            const SizedBox(height: 18),
-                            _buildTextFieldWithIcon(
-                              controller: _emailController,
-                              placeholder: 'E-mail',
-                              icon: CupertinoIcons.mail_solid,
-                              keyboardType: TextInputType.emailAddress,
-                              validator: (value) {
-                                if (value == null || !value.contains('@')) return 'E-mail inválido';
-                                return null;
-                              },
-                            ),
-                            const SizedBox(height: 18),
-                            _buildPasswordFieldWithToggle(
-                              controller: _passwordController,
-                              placeholder: 'Senha',
-                              showPassword: _showPassword,
-                              onToggle: () => setState(() => _showPassword = !_showPassword),
-                              validator: (value) {
-                                if (value == null || value.length < 6) return 'Mínimo 6 caracteres';
-                                return null;
-                              },
-                            ),
-                            // ... Password Strength UI (unchanged) ...
-                            const SizedBox(height: 18),
-                            _buildPasswordFieldWithToggle(
-                              controller: _confirmPasswordController,
-                              placeholder: 'Confirmar Senha',
-                              showPassword: _showConfirmPassword,
-                              onToggle: () => setState(() => _showConfirmPassword = !_showConfirmPassword),
-                              validator: (value) {
-                                if (value != _passwordController.text) return 'As senhas não coincidem';
-                                return null;
-                              },
-                            ),
-                            const SizedBox(height: 32),
-                            // ... Button (unchanged) ...
-                            CupertinoButton.filled(
-                              onPressed: _isLoading ? null : _handleSignUp,
-                              child: _isLoading
-                                  ? const CupertinoActivityIndicator()
-                                  : const Text('Cadastrar', style: TextStyle(color: Colors.white)),
-                            )
-                          ],
-                        ),
-                      ),
+                      ],
                     ),
-                  ],
+                  ),
                 ),
               ),
             ),
@@ -209,82 +252,357 @@ class _CreateAccountScreenState extends State<CreateAccountScreen> with TickerPr
       ),
     );
   }
+}
 
-  // FIX 3: Switched to TextFormField to enable Form Validation
-  Widget _buildTextFieldWithIcon({
-    required TextEditingController controller,
-    required String placeholder,
-    required IconData icon,
-    bool obscureText = false,
-    TextInputType keyboardType = TextInputType.text,
-    String? Function(String?)? validator,
-  }) {
-    return TextFormField(
-      controller: controller,
-      obscureText: obscureText,
-      keyboardType: keyboardType,
-      validator: validator,
-      style: const TextStyle(color: CupertinoColors.white, fontSize: 15),
-      cursorColor: const Color(0xFFFF8A8A),
-      decoration: InputDecoration(
-        hintText: placeholder,
-        hintStyle: TextStyle(
-          color: CupertinoColors.systemGrey.withValues(alpha: 0.6),
-          fontSize: 15,
+class _BackgroundGradient extends StatelessWidget {
+  final Widget child;
+
+  const _BackgroundGradient({required this.child});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      decoration: const BoxDecoration(
+        gradient: LinearGradient(
+          begin: Alignment.topCenter,
+          end: Alignment.bottomCenter,
+          colors: [
+            Color(0xFFB71C1C),
+            Color(0xFF500000),
+            Color(0xFF000000),
+          ],
+          stops: [0.0, 0.6, 1.0],
         ),
-        prefixIcon: Padding(
-          padding: const EdgeInsets.only(left: 14, right: 10),
-          child: Icon(icon, color: const Color(0xFFCC6666), size: 20),
+      ),
+      child: child,
+    );
+  }
+}
+
+class _SignUpForm extends StatelessWidget {
+  final GlobalKey<FormState> formKey;
+  final TextEditingController nameController;
+  final TextEditingController emailController;
+  final TextEditingController phoneController;
+  final TextEditingController passwordController;
+  final TextEditingController confirmPasswordController;
+  final FocusNode nameFocusNode;
+  final FocusNode emailFocusNode;
+  final FocusNode phoneFocusNode;
+  final FocusNode passwordFocusNode;
+  final FocusNode confirmPasswordFocusNode;
+  final bool showPassword;
+  final bool showConfirmPassword;
+  final int passwordStrength;
+  final bool isLoading;
+  final VoidCallback onTogglePassword;
+  final VoidCallback onToggleConfirmPassword;
+  final VoidCallback onSignUp;
+  final Color Function(int) getStrengthColor;
+
+
+  //the user needs to sign all this fields, i prob gonna add some more later
+  const _SignUpForm({
+    required this.formKey,
+    required this.nameController,
+    required this.emailController,
+    required this.phoneController,
+    required this.passwordController,
+    required this.confirmPasswordController,
+    required this.nameFocusNode,
+    required this.emailFocusNode,
+    required this.phoneFocusNode,
+    required this.passwordFocusNode,
+    required this.confirmPasswordFocusNode,
+    required this.showPassword,
+    required this.showConfirmPassword,
+    required this.passwordStrength,
+    required this.isLoading,
+    required this.onTogglePassword,
+    required this.onToggleConfirmPassword,
+    required this.onSignUp,
+    required this.getStrengthColor,
+  });
+
+  static final _cardBg = const Color(0xFF1C1C1E).withValues(alpha: 0.6);
+  static final _borderColor = Colors.white.withValues(alpha: 0.1);
+  static final _shadowColor = Colors.black.withValues(alpha: 0.3);
+
+  @override
+  Widget build(BuildContext context) {
+    const iosFont = TextStyle(
+      fontFamily: '.SF Pro Text',
+      color: Colors.white,
+    );
+
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(20),
+      child: BackdropFilter(
+        filter: ImageFilter.blur(sigmaX: 15, sigmaY: 15),
+        child: Container(
+          padding: const EdgeInsets.all(24),
+          decoration: BoxDecoration(
+            color: _cardBg,
+            borderRadius: BorderRadius.circular(20),
+            border: Border.all(color: _borderColor, width: 1),
+            boxShadow: [
+              BoxShadow(
+                color: _shadowColor,
+                blurRadius: 30,
+                offset: const Offset(0, 10),
+              ),
+            ],
+          ),
+          child: Form(
+            key: formKey,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Text(
+                  'Junte-se a nós',
+                  textAlign: TextAlign.center,
+                  style: iosFont.copyWith(
+                    fontSize: 22,
+                    fontWeight: FontWeight.bold,
+                    letterSpacing: 0.5,
+                  ),
+                ),
+                const SizedBox(height: 24),
+
+                // Name Field
+                _CustomTextField(
+                  controller: nameController,
+                  focusNode: nameFocusNode,
+                  placeholder: 'Nome Completo',
+                  icon: CupertinoIcons.person_fill,
+                  keyboardType: TextInputType.name,
+                  textInputAction: TextInputAction.next,
+                  validator: (value) =>
+                  value!.isEmpty ? 'Por favor, insira seu nome' : null,
+                  onFieldSubmitted: (_) => emailFocusNode.requestFocus(),
+                ),
+                const SizedBox(height: 18),
+
+                // Email Field
+                _CustomTextField(
+                  controller: emailController,
+                  focusNode: emailFocusNode,
+                  placeholder: 'E-mail',
+                  icon: CupertinoIcons.mail_solid,
+                  keyboardType: TextInputType.emailAddress,
+                  textInputAction: TextInputAction.next,
+                  validator: (value) {
+                    if (value == null || !value.contains('@')) {
+                      return 'E-mail inválido';
+                    }
+                    return null;
+                  },
+                  onFieldSubmitted: (_) => phoneFocusNode.requestFocus(),
+                ),
+                const SizedBox(height: 18),
+
+                // Phone Field (Added)
+                _CustomTextField(
+                  controller: phoneController,
+                  focusNode: phoneFocusNode,
+                  placeholder: 'Telefone',
+                  icon: CupertinoIcons.phone_fill,
+                  keyboardType: TextInputType.phone,
+                  textInputAction: TextInputAction.next,
+                  validator: (value) =>
+                  value!.isEmpty ? 'Por favor, insira seu telefone' : null,
+                  onFieldSubmitted: (_) => passwordFocusNode.requestFocus(),
+                ),
+                const SizedBox(height: 18),
+
+                // Password Field
+                _PasswordTextField(
+                  controller: passwordController,
+                  focusNode: passwordFocusNode,
+                  placeholder: 'Senha',
+                  showPassword: showPassword,
+                  textInputAction: TextInputAction.next,
+                  onToggle: onTogglePassword,
+                  validator: (value) {
+                    if (value == null || value.length < 6) {
+                      return 'Mínimo 6 caracteres';
+                    }
+                    return null;
+                  },
+                  onFieldSubmitted: (_) => confirmPasswordFocusNode.requestFocus(),
+                ),
+
+                if (passwordController.text.isNotEmpty)
+                  _PasswordStrengthIndicator(
+                    strength: passwordStrength,
+                    getStrengthColor: getStrengthColor,
+                  ),
+
+                const SizedBox(height: 18),
+
+                // Confirm Password Field
+                _PasswordTextField(
+                  controller: confirmPasswordController,
+                  focusNode: confirmPasswordFocusNode,
+                  placeholder: 'Confirmar Senha',
+                  showPassword: showConfirmPassword,
+                  textInputAction: TextInputAction.done,
+                  onToggle: onToggleConfirmPassword,
+                  validator: (value) {
+                    if (value != passwordController.text) {
+                      return 'As senhas não coincidem';
+                    }
+                    return null;
+                  },
+                  onFieldSubmitted: (_) => onSignUp(),
+                ),
+
+                const SizedBox(height: 32),
+
+                _SignUpButton(
+                  isLoading: isLoading,
+                  onPressed: onSignUp,
+                ),
+              ],
+            ),
+          ),
         ),
-        prefixIconConstraints: const BoxConstraints(minWidth: 40),
-        filled: true,
-        fillColor: CupertinoColors.systemGrey.withValues(alpha: 0.08),
-        contentPadding: const EdgeInsets.symmetric(vertical: 14, horizontal: 14),
-        // Borders to match your Cupertino look
-        border: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(12),
-          borderSide: BorderSide(color: CupertinoColors.systemGrey2.withValues(alpha: 0.2), width: 1.2),
-        ),
-        enabledBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(12),
-          borderSide: BorderSide(color: CupertinoColors.systemGrey2.withValues(alpha: 0.2), width: 1.2),
-        ),
-        focusedBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(12),
-          borderSide: const BorderSide(color: Color(0xFFCC6666), width: 1.2),
-        ),
-        errorBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(12),
-          borderSide: const BorderSide(color: Color(0xFFFF8A8A), width: 1.2),
-        ),
-        errorStyle: const TextStyle(color: Color(0xFFFF8A8A), fontSize: 12, fontWeight: FontWeight.w500),
       ),
     );
   }
+}
 
-  // Same fix for the Password field helper
-  Widget _buildPasswordFieldWithToggle({
-    required TextEditingController controller,
-    required String placeholder,
-    required bool showPassword,
-    required VoidCallback onToggle,
-    String? Function(String?)? validator,
-  }) {
+class _CustomTextField extends StatelessWidget {
+  final TextEditingController controller;
+  final FocusNode focusNode;
+  final String placeholder;
+  final IconData icon;
+  final TextInputType keyboardType;
+  final TextInputAction textInputAction;
+  final String? Function(String?)? validator;
+  final Function(String)? onFieldSubmitted;
+
+  const _CustomTextField({
+    required this.controller,
+    required this.focusNode,
+    required this.placeholder,
+    required this.icon,
+    this.keyboardType = TextInputType.text,
+    this.textInputAction = TextInputAction.next,
+    this.validator,
+    this.onFieldSubmitted,
+  });
+
+  static final _fieldBg = Colors.black.withValues(alpha: 0.3);
+  static final _borderColor = Colors.white.withValues(alpha: 0.1);
+  static final _hintColor = Colors.white.withValues(alpha: 0.4);
+
+  @override
+  Widget build(BuildContext context) {
+    const iosFont = TextStyle(
+      fontFamily: '.SF Pro Text',
+      color: Colors.white,
+    );
+
     return TextFormField(
       controller: controller,
-      obscureText: !showPassword,
+      focusNode: focusNode,
+      keyboardType: keyboardType,
+      textInputAction: textInputAction,
       validator: validator,
-      style: const TextStyle(color: CupertinoColors.white, fontSize: 15),
-      cursorColor: const Color(0xFFFF8A8A),
+      onFieldSubmitted: onFieldSubmitted,
+      style: iosFont.copyWith(fontSize: 15),
+      cursorColor: const Color(0xFFFF453A),
       decoration: InputDecoration(
         hintText: placeholder,
-        hintStyle: TextStyle(
-          color: CupertinoColors.systemGrey.withValues(alpha: 0.6),
-          fontSize: 15,
-        ),
+        hintStyle: iosFont.copyWith(color: _hintColor, fontSize: 15),
         prefixIcon: Padding(
           padding: const EdgeInsets.only(left: 14, right: 10),
-          child: Icon(CupertinoIcons.lock_fill, color: const Color(0xFFCC6666), size: 20),
+          child: Icon(icon, color: Colors.white70, size: 20),
+        ),
+        prefixIconConstraints: const BoxConstraints(minWidth: 40),
+        filled: true,
+        fillColor: _fieldBg,
+        contentPadding: const EdgeInsets.symmetric(
+          vertical: 16,
+          horizontal: 14,
+        ),
+        border: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(12),
+          borderSide: BorderSide(color: _borderColor, width: 1),
+        ),
+        enabledBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(12),
+          borderSide: BorderSide(color: _borderColor, width: 1),
+        ),
+        focusedBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(12),
+          borderSide: const BorderSide(color: Color(0xFFFF453A), width: 1.5),
+        ),
+        errorBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(12),
+          borderSide: const BorderSide(color: Color(0xFFFF453A), width: 1),
+        ),
+        errorStyle: iosFont.copyWith(
+          color: const Color(0xFFFF453A),
+          fontSize: 12,
+        ),
+      ),
+    );
+  }
+}
+
+class _PasswordTextField extends StatelessWidget {
+  final TextEditingController controller;
+  final FocusNode focusNode;
+  final String placeholder;
+  final bool showPassword;
+  final TextInputAction textInputAction;
+  final VoidCallback onToggle;
+  final String? Function(String?)? validator;
+  final Function(String)? onFieldSubmitted;
+
+  const _PasswordTextField({
+    required this.controller,
+    required this.focusNode,
+    required this.placeholder,
+    required this.showPassword,
+    required this.textInputAction,
+    required this.onToggle,
+    this.validator,
+    this.onFieldSubmitted,
+  });
+
+  static final _fieldBg = Colors.black.withValues(alpha: 0.3);
+  static final _borderColor = Colors.white.withValues(alpha: 0.1);
+  static final _hintColor = Colors.white.withValues(alpha: 0.4);
+
+  @override
+  Widget build(BuildContext context) {
+    const iosFont = TextStyle(
+      fontFamily: '.SF Pro Text',
+      color: Colors.white,
+    );
+
+    return TextFormField(
+      controller: controller,
+      focusNode: focusNode,
+      obscureText: !showPassword,
+      textInputAction: textInputAction,
+      validator: validator,
+      onFieldSubmitted: onFieldSubmitted,
+      style: iosFont.copyWith(fontSize: 15),
+      cursorColor: const Color(0xFFFF453A),
+      decoration: InputDecoration(
+        hintText: placeholder,
+        hintStyle: iosFont.copyWith(color: _hintColor, fontSize: 15),
+        prefixIcon: const Padding(
+          padding: EdgeInsets.only(left: 14, right: 10),
+          child: Icon(
+            CupertinoIcons.lock_fill,
+            color: Colors.white70,
+            size: 20,
+          ),
         ),
         prefixIconConstraints: const BoxConstraints(minWidth: 40),
         suffixIcon: GestureDetector(
@@ -292,33 +610,137 @@ class _CreateAccountScreenState extends State<CreateAccountScreen> with TickerPr
           child: Padding(
             padding: const EdgeInsets.only(right: 14),
             child: Icon(
-              showPassword ? CupertinoIcons.eye_fill : CupertinoIcons.eye_slash_fill,
-              color: const Color(0xFFCC6666),
+              showPassword
+                  ? CupertinoIcons.eye_fill
+                  : CupertinoIcons.eye_slash_fill,
+              color: Colors.white54,
               size: 20,
             ),
           ),
         ),
         suffixIconConstraints: const BoxConstraints(minWidth: 40),
         filled: true,
-        fillColor: CupertinoColors.systemGrey.withValues(alpha: 0.08),
-        contentPadding: const EdgeInsets.symmetric(vertical: 14, horizontal: 14),
+        fillColor: _fieldBg,
+        contentPadding: const EdgeInsets.symmetric(
+          vertical: 16,
+          horizontal: 14,
+        ),
         border: OutlineInputBorder(
           borderRadius: BorderRadius.circular(12),
-          borderSide: BorderSide(color: CupertinoColors.systemGrey2.withValues(alpha: 0.2), width: 1.2),
+          borderSide: BorderSide(color: _borderColor, width: 1),
         ),
         enabledBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(12),
-          borderSide: BorderSide(color: CupertinoColors.systemGrey2.withValues(alpha: 0.2), width: 1.2),
+          borderSide: BorderSide(color: _borderColor, width: 1),
         ),
         focusedBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(12),
-          borderSide: const BorderSide(color: Color(0xFFCC6666), width: 1.2),
+          borderSide: const BorderSide(color: Color(0xFFFF453A), width: 1.5),
         ),
         errorBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(12),
-          borderSide: const BorderSide(color: Color(0xFFFF8A8A), width: 1.2),
+          borderSide: const BorderSide(color: Color(0xFFFF453A), width: 1),
         ),
-        errorStyle: const TextStyle(color: Color(0xFFFF8A8A), fontSize: 12, fontWeight: FontWeight.w500),
+        errorStyle: iosFont.copyWith(
+          color: const Color(0xFFFF453A),
+          fontSize: 12,
+        ),
+      ),
+    );
+  }
+}
+
+class _PasswordStrengthIndicator extends StatelessWidget {
+  final int strength;
+  final Color Function(int) getStrengthColor;
+
+  const _PasswordStrengthIndicator({
+    required this.strength,
+    required this.getStrengthColor,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    const iosFont = TextStyle(
+      fontFamily: '.SF Pro Text',
+      color: Colors.white,
+    );
+
+    return Padding(
+      padding: const EdgeInsets.only(top: 8, left: 4, right: 4),
+      child: Row(
+        children: [
+          Expanded(
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(2),
+              child: LinearProgressIndicator(
+                value: strength / 3,
+                backgroundColor: Colors.white12,
+                valueColor: AlwaysStoppedAnimation<Color>(
+                  getStrengthColor(strength),
+                ),
+                minHeight: 4,
+              ),
+            ),
+          ),
+          const SizedBox(width: 8),
+          Text(
+            ['Fraca', 'Média', 'Forte'][(strength - 1).clamp(0, 2)],
+            style: iosFont.copyWith(fontSize: 10, color: Colors.white54),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _SignUpButton extends StatelessWidget {
+  final bool isLoading;
+  final VoidCallback onPressed;
+
+  const _SignUpButton({
+    required this.isLoading,
+    required this.onPressed,
+  });
+
+  static final _shadowColor = const Color(0xFFD32F2F).withValues(alpha: 0.4);
+
+  @override
+  Widget build(BuildContext context) {
+    const iosFont = TextStyle(
+      fontFamily: '.SF Pro Text',
+      color: Colors.white,
+    );
+
+    return CupertinoButton(
+      padding: EdgeInsets.zero,
+      onPressed: isLoading ? null : onPressed,
+      child: Container(
+        width: double.infinity,
+        padding: const EdgeInsets.symmetric(vertical: 16),
+        decoration: BoxDecoration(
+          gradient: const LinearGradient(
+            colors: [Color(0xFFD32F2F), Color(0xFFB71C1C)],
+          ),
+          borderRadius: BorderRadius.circular(12),
+          boxShadow: [
+            BoxShadow(
+              color: _shadowColor,
+              blurRadius: 15,
+              offset: const Offset(0, 5),
+            ),
+          ],
+        ),
+        child: isLoading
+            ? const CupertinoActivityIndicator(color: Colors.white)
+            : Text(
+          'Cadastrar',
+          textAlign: TextAlign.center,
+          style: iosFont.copyWith(
+            fontWeight: FontWeight.bold,
+            fontSize: 16,
+          ),
+        ),
       ),
     );
   }

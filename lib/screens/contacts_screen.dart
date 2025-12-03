@@ -270,7 +270,7 @@ class _ContactsHeader extends StatelessWidget {
                   const CircleAvatar(
                     radius: 18,
                     backgroundColor: Colors.white12,
-                    backgroundImage: AssetImage('assets/images/logo.png'),
+                    backgroundImage: AssetImage('assets/images/vopec_logo.png'),
                   ),
               ],
             ),
@@ -281,7 +281,6 @@ class _ContactsHeader extends StatelessWidget {
   }
 }
 
-// Extracted contacts list with optimizations
 class _ContactsList extends StatelessWidget {
   final ContactService contactService;
   final String searchQuery;
@@ -318,7 +317,6 @@ class _ContactsList extends StatelessWidget {
           );
         }
 
-        // Filter contacts
         final contacts = searchQuery.isEmpty
             ? snapshot.data!
             : snapshot.data!.where((contact) {
@@ -344,9 +342,7 @@ class _ContactsList extends StatelessWidget {
             right: 16,
           ),
           itemCount: contacts.length,
-          // Performance optimization: hint the item height
-          itemExtent: 95, // Height of each card (12 padding + 57 content + 12 padding)
-          // Cache more items for smoother scrolling
+          itemExtent: 95,
           cacheExtent: 500,
           itemBuilder: (context, index) {
             final contact = contacts[index];
@@ -366,7 +362,6 @@ class _ContactsList extends StatelessWidget {
   }
 }
 
-// Optimized contact card - removed expensive blur, kept only subtle effects
 class _ContactCard extends StatelessWidget {
   final Contact contact;
   final bool isSelected;

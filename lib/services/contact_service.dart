@@ -36,11 +36,11 @@ class ContactService {
     });
   }
 
-  // READ FAVORITES (Client-side filtering for simplicity, or use where query)
+  // READ FAVORITES
   Stream<List<Contact>> getFavoriteContacts() {
     return _contactsRef
         .where('isFavorite', isEqualTo: true)
-        .limit(3) // Limit to 3 as requested
+        .limit(3)
         .snapshots()
         .map((snapshot) {
       return snapshot.docs.map((doc) {
@@ -49,7 +49,7 @@ class ContactService {
     });
   }
 
-  // UPDATE INFO
+  // UPDATE
   Future<void> updateContact(String id, String name, String email, String phone, String role) async {
     await _contactsRef.doc(id).update({
       'name': name,
@@ -59,7 +59,7 @@ class ContactService {
     });
   }
 
-  // TOGGLE FAVORITE
+  // IS FAVORITE
   Future<void> toggleFavorite(String id, bool currentStatus) async {
     await _contactsRef.doc(id).update({
       'isFavorite': !currentStatus,

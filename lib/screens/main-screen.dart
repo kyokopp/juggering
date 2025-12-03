@@ -3,9 +3,11 @@ import 'package:flutter/material.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'contacts_screen.dart';
+import 'profile_screen.dart';
 import '../services/contact_service.dart';
 import '../services/contact_model.dart';
 import 'package:juggering/screens/responsive.dart';
+
 
 class MainScreen extends StatefulWidget {
   const MainScreen({super.key});
@@ -33,11 +35,6 @@ class _MainScreenState extends State<MainScreen> {
     _cachedFirstName = user?.displayName?.split(' ').firstOrNull ?? 'Polaris';
   }
 
-  @override
-  void dispose() {
-    super.dispose();
-  }
-
   void _toggleSidebar() {
     setState(() {
       _isSidebarOpen = !_isSidebarOpen;
@@ -62,7 +59,7 @@ class _MainScreenState extends State<MainScreen> {
             favoritesStream: _favoritesStream,
           ),
 
-          // efeito de dim da sidebar
+          // Sidebar Dim Effect
           if (_isSidebarOpen)
             GestureDetector(
               onTap: _toggleSidebar,
@@ -75,7 +72,7 @@ class _MainScreenState extends State<MainScreen> {
               ),
             ),
 
-          // sidebar
+          // Animated Sidebar
           _AnimatedSidebar(
             isOpen: _isSidebarOpen,
             width: sidebarWidth,
@@ -105,7 +102,8 @@ class _MainContent extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final user = FirebaseAuth.instance.currentUser;
+    // iOS Font Style
+    const iosFont = TextStyle(fontFamily: '.SF Pro Text', color: Colors.white);
 
     return Container(
       decoration: const BoxDecoration(
@@ -118,51 +116,86 @@ class _MainContent extends StatelessWidget {
       child: SafeArea(
         child: Column(
           children: [
-            // top container
-            Container(
-              padding: const EdgeInsets.all(16.0),
-              decoration: BoxDecoration(
-                color: CupertinoColors.systemGrey.withValues(alpha: 0.15),
-                borderRadius: const BorderRadius.only(
-                  bottomLeft: Radius.circular(20),
-                  bottomRight: Radius.circular(20),
-                ),
+            // Top Container (Updated for better visibility and contrast)
+            ClipRRect(
+              borderRadius: const BorderRadius.only(
+                bottomLeft: Radius.circular(20),
+                bottomRight: Radius.circular(20),
               ),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  Row(
+              child: BackdropFilter(
+                filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
+                child: Container(
+                  padding: const EdgeInsets.all(16.0),
+                  decoration: BoxDecoration(
+                    color: CupertinoColors.systemGrey.withValues(alpha: 0.25), // Increased contrast
+                    border: Border(
+                      bottom: BorderSide(color: Colors.white.withValues(alpha: 0.1)),
+                    ),
+                  ),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
-                      const CircleAvatar(
-                        radius: 25,
-                        backgroundImage: AssetImage('assets/images/logo.png'),
-                        backgroundColor: Colors.transparent,
+                      // Profile Shortcut
+                      GestureDetector(
+                        onTap: () {
+                          // Navigate to Profile Screen
+                          Navigator.of(context).push(
+                            CupertinoPageRoute(builder: (context) => const ProfileScreen()),
+                          );
+                        },
+                        child: Row(
+                          children: [
+                            Hero(
+                              tag: 'current_user_avatar',
+                              child: Container(
+                                width: 50,
+                                height: 50,
+                                decoration: BoxDecoration(
+                                  shape: BoxShape.circle,
+                                  border: Border.all(color: Colors.white.withValues(alpha: 0.3)),
+                                  image: const DecorationImage(
+                                    image: AssetImage('assets/images/user.png'),
+                                    fit: BoxFit.cover,
+                                  ),
+                                ),
+                              ),
+                            ),
+                            const SizedBox(width: 12),
+                            Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  'Olá,',
+                                  style: iosFont.copyWith(fontSize: 14, color: Colors.white70),
+                                ),
+                                Text(
+                                  cachedFirstName,
+                                  style: iosFont.copyWith(
+                                    fontSize: 20,
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ],
+                        ),
                       ),
-                      const SizedBox(width: 12),
-                      Text(
-                        'Olá, $cachedFirstName',
-                        style: const TextStyle(
+                      CupertinoButton(
+                        padding: EdgeInsets.zero,
+                        onPressed: onMenuTap,
+                        child: const Icon(
+                          CupertinoIcons.bars,
                           color: CupertinoColors.white,
-                          fontSize: 20,
-                          fontWeight: FontWeight.bold,
+                          size: 32,
                         ),
                       ),
                     ],
                   ),
-                  CupertinoButton(
-                    padding: EdgeInsets.zero,
-                    onPressed: onMenuTap,
-                    child: const Icon(
-                      CupertinoIcons.bars,
-                      color: CupertinoColors.white,
-                      size: 32,
-                    ),
-                  ),
-                ],
+                ),
               ),
             ),
 
-            // dashboard
+            // Dashboard Content
             Expanded(
               child: SingleChildScrollView(
                 padding: const EdgeInsets.all(16.0),
@@ -170,7 +203,7 @@ class _MainContent extends StatelessWidget {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
-                      //aba dos favoritos
+                      // Favorites Section
                       _FavoritesSection(favoritesStream: favoritesStream),
                       const SizedBox(height: 16),
                       const _DashboardCard(
@@ -204,70 +237,72 @@ class _FavoritesSection extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final screenSize = MediaQuery.of(context).size;
+    const iosFont = TextStyle(fontFamily: '.SF Pro Text', color: Colors.white);
 
     return SizedBox(
       height: screenSize.height * 0.33,
-      child: Container(
-        padding: const EdgeInsets.all(16),
-        decoration: BoxDecoration(
-          color: CupertinoColors.systemGrey.withValues(alpha: 0.15),
-          borderRadius: BorderRadius.circular(15),
-          border: Border.all(
-            color: CupertinoColors.systemGrey2.withValues(alpha: 0.3),
-            width: 0.5,
-          ),
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Row(
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(15),
+        child: BackdropFilter(
+          filter: ImageFilter.blur(sigmaX: 5, sigmaY: 5),
+          child: Container(
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: CupertinoColors.systemGrey.withValues(alpha: 0.15),
+              borderRadius: BorderRadius.circular(15),
+              border: Border.all(
+                color: CupertinoColors.systemGrey2.withValues(alpha: 0.3),
+                width: 0.5,
+              ),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Icon(CupertinoIcons.heart_fill, color: CupertinoColors.systemRed, size: 24),
-                SizedBox(width: 8),
-                Text(
-                  'Contatos Favoritos',
-                  style: TextStyle(
-                    color: Colors.white,
-                    fontSize: 18,
-                    fontWeight: FontWeight.bold,
+                Row(
+                  children: [
+                    const Icon(CupertinoIcons.heart_fill, color: CupertinoColors.systemRed, size: 24),
+                    const SizedBox(width: 8),
+                    Text(
+                      'Contatos Favoritos',
+                      style: iosFont.copyWith(fontSize: 18, fontWeight: FontWeight.bold),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 12),
+                Expanded(
+                  child: StreamBuilder<List<Contact>>(
+                    stream: favoritesStream,
+                    builder: (context, snapshot) {
+                      if (snapshot.connectionState == ConnectionState.waiting) {
+                        return const Center(
+                          child: CupertinoActivityIndicator(color: Colors.white),
+                        );
+                      }
+                      if (!snapshot.hasData || snapshot.data!.isEmpty) {
+                        return Center(
+                          child: Text(
+                            'Nenhum contato favorito.',
+                            style: iosFont.copyWith(color: Colors.white38),
+                          ),
+                        );
+                      }
+
+                      final favorites = snapshot.data!.take(3).toList();
+
+                      return ListView.builder(
+                        itemCount: favorites.length,
+                        physics: const BouncingScrollPhysics(),
+                        itemBuilder: (context, index) {
+                          final contact = favorites[index];
+                          return _FavoriteContactCard(contact: contact);
+                        },
+                      );
+                    },
                   ),
                 ),
               ],
             ),
-            const SizedBox(height: 12),
-            Expanded(
-              child: StreamBuilder<List<Contact>>(
-                stream: favoritesStream,
-                builder: (context, snapshot) {
-                  if (snapshot.connectionState == ConnectionState.waiting) {
-                    return const Center(
-                      child: CupertinoActivityIndicator(color: Colors.white),
-                    );
-                  }
-                  if (!snapshot.hasData || snapshot.data!.isEmpty) {
-                    return const Center(
-                      child: Text(
-                        'Nenhum contato favorito.',
-                        style: TextStyle(color: Colors.white38),
-                      ),
-                    );
-                  }
-
-                  //mostra apenas 3 contatos favoritos na tela principal pra ficar mais direto
-                  final favorites = snapshot.data!.take(3).toList();
-
-                  return ListView.builder(
-                    itemCount: favorites.length,
-                    physics: const BouncingScrollPhysics(),
-                    itemBuilder: (context, index) {
-                      final contact = favorites[index];
-                      return _FavoriteContactCard(contact: contact);
-                    },
-                  );
-                },
-              ),
-            ),
-          ],
+          ),
         ),
       ),
     );
@@ -281,13 +316,15 @@ class _FavoriteContactCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    const iosFont = TextStyle(fontFamily: '.SF Pro Text', color: Colors.white);
+
     return Container(
       margin: const EdgeInsets.only(bottom: 8),
       padding: const EdgeInsets.all(10),
       decoration: BoxDecoration(
-        color: Colors.black26,
+        color: Colors.black.withValues(alpha: 0.26),
         borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: Colors.white10),
+        border: Border.all(color: Colors.white.withValues(alpha: 0.1)),
       ),
       child: Row(
         children: [
@@ -300,18 +337,14 @@ class _FavoriteContactCard extends StatelessWidget {
           Expanded(
             child: Text(
               contact.name,
-              style: const TextStyle(
-                color: Colors.white,
-                fontSize: 16,
-                fontWeight: FontWeight.w500,
-              ),
+              style: iosFont.copyWith(fontSize: 16, fontWeight: FontWeight.w500),
               overflow: TextOverflow.ellipsis,
             ),
           ),
           if (contact.role.isNotEmpty)
             Text(
               contact.role,
-              style: const TextStyle(color: Colors.white54, fontSize: 12),
+              style: iosFont.copyWith(color: Colors.white54, fontSize: 12),
             ),
         ],
       ),
@@ -332,6 +365,8 @@ class _DashboardCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    const iosFont = TextStyle(fontFamily: '.SF Pro Text', color: Colors.white);
+
     return Container(
       padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
@@ -352,16 +387,12 @@ class _DashboardCard extends StatelessWidget {
               children: [
                 Text(
                   title,
-                  style: const TextStyle(
-                    color: CupertinoColors.white,
-                    fontSize: 18,
-                    fontWeight: FontWeight.bold,
-                  ),
+                  style: iosFont.copyWith(fontSize: 18, fontWeight: FontWeight.bold),
                 ),
                 const SizedBox(height: 4),
                 Text(
                   content,
-                  style: const TextStyle(color: CupertinoColors.systemGrey3),
+                  style: iosFont.copyWith(color: CupertinoColors.systemGrey3),
                 ),
               ],
             ),
@@ -389,6 +420,8 @@ class _AnimatedSidebar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    const iosFont = TextStyle(fontFamily: '.SF Pro Text', color: Colors.white);
+
     return AnimatedPositioned(
       duration: const Duration(milliseconds: 300),
       curve: Curves.easeInOut,
@@ -413,13 +446,9 @@ class _AnimatedSidebar extends StatelessWidget {
                     child: Row(
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
-                        const Text(
+                        Text(
                           'Menu',
-                          style: TextStyle(
-                            color: CupertinoColors.white,
-                            fontSize: 28,
-                            fontWeight: FontWeight.bold,
-                          ),
+                          style: iosFont.copyWith(fontSize: 28, fontWeight: FontWeight.bold),
                         ),
                         CupertinoButton(
                           padding: EdgeInsets.zero,
@@ -464,20 +493,19 @@ class _AnimatedSidebar extends StatelessWidget {
                       onPressed: onLogout,
                       padding: const EdgeInsets.symmetric(vertical: 16),
                       borderRadius: BorderRadius.circular(10),
-                      child: const Row(
+                      child: Row(
                         mainAxisAlignment: MainAxisAlignment.center,
                         children: [
-                          Icon(
+                          const Icon(
                             CupertinoIcons.square_arrow_right,
                             color: CupertinoColors.white,
                           ),
-                          SizedBox(width: 8),
+                          const SizedBox(width: 8),
                           Text(
                             'Sair',
-                            style: TextStyle(
+                            style: iosFont.copyWith(
                               fontSize: 18,
                               fontWeight: FontWeight.w600,
-                              color: CupertinoColors.white,
                             ),
                           ),
                         ],
@@ -507,6 +535,8 @@ class _SidebarButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    const iosFont = TextStyle(fontFamily: '.SF Pro Text', color: Colors.white);
+
     return CupertinoButton(
       onPressed: onTap,
       alignment: Alignment.centerLeft,
@@ -517,10 +547,7 @@ class _SidebarButton extends StatelessWidget {
           const SizedBox(width: 16),
           Text(
             label,
-            style: const TextStyle(
-              color: CupertinoColors.white,
-              fontSize: 20,
-            ),
+            style: iosFont.copyWith(fontSize: 20),
           ),
         ],
       ),

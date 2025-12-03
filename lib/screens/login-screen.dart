@@ -3,7 +3,6 @@ import 'package:flutter/cupertino.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:juggering/screens/create-account.dart';
 import 'responsive.dart';
-import 'package:flutter/services.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -293,11 +292,11 @@ class _LoginForm extends StatelessWidget {
   });
 
   // Cache colors
-  static final _fieldBgColor = CupertinoColors.systemGrey.withOpacity(0.08);
-  static final _fieldBorderColor = CupertinoColors.systemGrey2.withOpacity(0.25);
-  static final _cardBgColor = CupertinoColors.systemGrey.withOpacity(0.25);
-  static final _cardBorderColor = CupertinoColors.systemGrey2.withOpacity(0.4);
-  static final _placeholderColor = CupertinoColors.systemGrey.withOpacity(0.6);
+  static final _fieldBgColor = CupertinoColors.systemGrey.withValues(alpha: 0.08);
+  static final _fieldBorderColor = CupertinoColors.systemGrey2.withValues(alpha: 0.25);
+  static final _cardBgColor = CupertinoColors.systemGrey.withValues(alpha: 0.25);
+  static final _cardBorderColor = CupertinoColors.systemGrey2.withValues(alpha: 0.4);
+  static final _placeholderColor = CupertinoColors.systemGrey.withValues(alpha: 0.6);
 
   @override
   Widget build(BuildContext context) {
@@ -373,8 +372,7 @@ class _LoginForm extends StatelessWidget {
               ),
               suffix: CupertinoButton(
                 padding: EdgeInsets.zero,
-                onPressed: onTogglePassword,
-                minSize: 0,
+                onPressed: onTogglePassword, minimumSize: Size(0, 0),
                 child: Padding(
                   padding: const EdgeInsets.only(right: 12),
                   child: Icon(
@@ -402,8 +400,7 @@ class _LoginForm extends StatelessWidget {
               alignment: Alignment.centerRight,
               child: CupertinoButton(
                 padding: EdgeInsets.zero,
-                minSize: 0,
-                onPressed: onForgotPassword,
+                onPressed: onForgotPassword, minimumSize: Size(0, 0),
                 child: const Text(
                   'Esqueceu a senha?',
                   style: TextStyle(
@@ -466,8 +463,7 @@ class _SignUpLink extends StatelessWidget {
         ),
         CupertinoButton(
           padding: EdgeInsets.zero,
-          minSize: 0,
-          onPressed: onSignUp,
+          onPressed: onSignUp, minimumSize: Size(0, 0),
           child: const Text(
             'Cadastre-se',
             style: TextStyle(
