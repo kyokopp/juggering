@@ -15,12 +15,68 @@ class ProjectDetailsScreen extends StatefulWidget {
   State<ProjectDetailsScreen> createState() => _ProjectDetailsScreenState();
 }
 
-class _ProjectDetailsScreenState extends State<ProjectDetailsScreen> {
-  final ProjectService _projectService = ProjectService();
-  final DateFormat _dateFormat = DateFormat('dd/MM/yyyy');
+class _ProjectDetailsScreenState extends State<ProjectDetailsScreen>
+    with SingleTickerProviderStateMixin {
+  // Reuse single instance
+  late final ProjectService _projectService;
+  late final DateFormat _dateFormat;
 
-  void _handleDelete() {
-    showCupertinoDialog(
+  // Cache computed values
+  late final int _duration;
+  late final Color _statusColor;
+  late final String _statusLabel;
+
+  // Animation controller for smooth transitions
+  late final AnimationController _animationController;
+  late final Animation<double> _fadeAnimation;
+  late final Animation<Offset> _slideAnimation;
+
+  @override
+  void initState() {
+    super.initState();
+
+    // Initialize services
+    _projectService = ProjectService();
+    _dateFormat = DateFormat('dd/MM/yyyy');
+
+    // Cache computed values (calculated once)
+    _duration = widget.project.endDate.difference(widget.project.startDate).inDays;
+    _statusColor = _getStatusColor(widget.project.status);
+    _statusLabel = _getStatusLabel(widget.project.status);
+
+    // Setup 120Hz-ready animations
+    _animationController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 350), // Smooth duration for 120Hz
+    );
+
+    _fadeAnimation = CurvedAnimation(
+      parent: _animationController,
+      curve: Curves.easeOutCubic, // Smooth curve for high refresh rates
+    );
+
+    _slideAnimation = Tween<Offset>(
+      begin: const Offset(0, 0.02),
+      end: Offset.zero,
+    ).animate(CurvedAnimation(
+      parent: _animationController,
+      curve: Curves.easeOutCubic,
+    ));
+
+    // Start entrance animation
+    _animationController.forward();
+  }
+
+  @override
+  void dispose() {
+    _animationController.dispose();
+    // Note: ProjectService disposal depends on your implementation
+    // If it has streams/listeners, dispose them here
+    super.dispose();
+  }
+
+  Future<void> _handleDelete() async {
+    final shouldDelete = await showCupertinoDialog<bool>(
       context: context,
       builder: (ctx) => CupertinoAlertDialog(
         title: const Text('Excluir Projeto'),
@@ -28,35 +84,48 @@ class _ProjectDetailsScreenState extends State<ProjectDetailsScreen> {
         actions: [
           CupertinoDialogAction(
             child: const Text('Cancelar'),
-            onPressed: () => Navigator.pop(ctx),
+            onPressed: () => Navigator.pop(ctx, false),
           ),
           CupertinoDialogAction(
             isDestructiveAction: true,
             child: const Text('Excluir'),
-            onPressed: () {
-              _projectService.deleteProject(widget.project.id);
-              Navigator.pop(ctx);
-              Navigator.pop(context);
-            },
+            onPressed: () => Navigator.pop(ctx, true),
           ),
         ],
       ),
     );
+
+    if (shouldDelete == true && mounted) {
+      await _projectService.deleteProject(widget.project.id);
+      if (mounted) {
+        Navigator.pop(context, true); // Return true to indicate deletion
+      }
+    }
+  }
+
+  Future<void> _handleEdit() async {
+    final result = await showDialog<bool>(
+      context: context,
+      barrierColor: Colors.black.withValues(alpha: 0.7),
+      builder: (context) => ProjectDialog(project: widget.project),
+    );
+
+    if (result == true && mounted) {
+      Navigator.pop(context, true);
+    }
   }
 
   @override
   Widget build(BuildContext context) {
-    const iosFont = TextStyle(fontFamily: '.SF Pro Text', color: Colors.white);
-
-    //calcula quanto tempo o projeto vai durar
-    final duration = widget.project.endDate.difference(widget.project.startDate).inDays;
+    const textStyle = TextStyle(color: Colors.white);
 
     return Scaffold(
       extendBodyBehindAppBar: true,
       body: Stack(
         children: [
-          // Background
-          Container(
+          // Background with subtle animation
+          AnimatedContainer(
+            duration: const Duration(milliseconds: 300),
             decoration: const BoxDecoration(
               gradient: LinearGradient(
                 begin: Alignment.topCenter,
@@ -75,123 +144,96 @@ class _ProjectDetailsScreenState extends State<ProjectDetailsScreen> {
                   child: Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
-                      CupertinoButton(
-                        padding: EdgeInsets.zero,
-                        child: Container(
-                          padding: const EdgeInsets.all(8),
-                          decoration: BoxDecoration(
-                            color: Colors.white.withValues(alpha: 0.1),
-                            borderRadius: BorderRadius.circular(12),
-                          ),
-                          child: const Icon(CupertinoIcons.arrow_left, color: Colors.white),
-                        ),
+                      _buildHeaderButton(
+                        icon: CupertinoIcons.arrow_left,
+                        color: Colors.white.withValues(alpha:0.1),
+                        iconColor: Colors.white,
                         onPressed: () => Navigator.pop(context),
                       ),
                       Text(
                         'Detalhes do Projeto',
-                        style: iosFont.copyWith(fontSize: 17, fontWeight: FontWeight.w600),
-                      ),
-                      CupertinoButton(
-                        padding: EdgeInsets.zero,
-                        onPressed: () {
-
-                          showDialog(
-                            context: context,
-                            barrierColor: Colors.black.withValues(alpha: 0.7),
-                            builder: (context) => ProjectDialog(project: widget.project),
-                          ).then((_) {
-
-                            Navigator.pop(context);
-                          });
-                        },
-                        child: Container(
-                          padding: const EdgeInsets.all(8),
-                          decoration: BoxDecoration(
-                            color: Colors.blueAccent.withValues(alpha: 0.2),
-                            borderRadius: BorderRadius.circular(12),
-                          ),
-                          child: const Icon(CupertinoIcons.pencil, color: Colors.blueAccent),
+                        style: textStyle.copyWith(
+                          fontSize: 17,
+                          fontWeight: FontWeight.w600,
                         ),
+                      ),
+                      _buildHeaderButton(
+                        icon: CupertinoIcons.pencil,
+                        color: Colors.blueAccent.withValues(alpha:0.2),
+                        iconColor: Colors.blueAccent,
+                        onPressed: _handleEdit,
                       ),
                     ],
                   ),
                 ),
 
+                // Content with smooth animations
                 Expanded(
-                  child: SingleChildScrollView(
-                    padding: const EdgeInsets.all(20),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        // Title & Status
-                        Text(
-                          widget.project.name.toUpperCase(),
-                          style: iosFont.copyWith(fontSize: 28, fontWeight: FontWeight.bold),
-                        ),
-                        const SizedBox(height: 10),
-                        Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                          decoration: BoxDecoration(
-                            color: _getStatusColor(widget.project.status).withValues(alpha: 0.2),
-                            borderRadius: BorderRadius.circular(20),
-                            border: Border.all(color: _getStatusColor(widget.project.status)),
-                          ),
-                          child: Text(
-                            _getStatusLabel(widget.project.status),
-                            style: iosFont.copyWith(
-                                color: _getStatusColor(widget.project.status),
-                                fontSize: 12,
-                                fontWeight: FontWeight.bold
+                  child: FadeTransition(
+                    opacity: _fadeAnimation,
+                    child: SlideTransition(
+                      position: _slideAnimation,
+                      child: SingleChildScrollView(
+                        physics: const BouncingScrollPhysics(),
+                        padding: const EdgeInsets.all(20),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            // Title & Status
+                            _buildTitleSection(textStyle),
+                            const SizedBox(height: 30),
+
+                            // Location Card
+                            _buildGlassCard(
+                              icon: CupertinoIcons.location_solid,
+                              title: 'LOCALIZAÇÃO',
+                              content: '${widget.project.city} - ${widget.project.state}',
                             ),
-                          ),
-                        ),
+                            const SizedBox(height: 16),
 
-                        const SizedBox(height: 30),
-
-                        // Location Card
-                        _buildGlassCard(
-                          icon: CupertinoIcons.location_solid,
-                          title: 'LOCALIZAÇÃO',
-                          content: '${widget.project.city} - ${widget.project.state}',
-                        ),
-                        const SizedBox(height: 16),
-
-                        // Dates Card
-                        _buildGlassCard(
-                          icon: CupertinoIcons.calendar,
-                          title: 'CRONOGRAMA',
-                          content: '${_dateFormat.format(widget.project.startDate)} até ${_dateFormat.format(widget.project.endDate)}\n($duration dias estimados)',
-                        ),
-                        const SizedBox(height: 16),
-
-                        // Description
-                        _buildGlassCard(
-                          icon: CupertinoIcons.doc_text,
-                          title: 'DESCRIÇÃO',
-                          content: widget.project.description,
-                        ),
-                        const SizedBox(height: 16),
-
-                        // Observations
-                        _buildGlassCard(
-                          icon: CupertinoIcons.exclamationmark_circle,
-                          title: 'OBSERVAÇÕES',
-                          content: widget.project.observations.isEmpty ? 'Nenhuma observação.' : widget.project.observations,
-                        ),
-
-                        const SizedBox(height: 40),
-
-                        // Delete Button
-                        Center(
-                          child: CupertinoButton(
-                            onPressed: _handleDelete,
-                            child: Text(
-                              'Excluir Projeto',
-                              style: iosFont.copyWith(color: Colors.redAccent, fontWeight: FontWeight.w600),
+                            // Dates Card
+                            _buildGlassCard(
+                              icon: CupertinoIcons.calendar,
+                              title: 'CRONOGRAMA',
+                              content: '${_dateFormat.format(widget.project.startDate)} até ${_dateFormat.format(widget.project.endDate)}\n($_duration dias estimados)',
                             ),
-                          ),
-                        )
-                      ],
+                            const SizedBox(height: 16),
+
+                            // Description
+                            _buildGlassCard(
+                              icon: CupertinoIcons.doc_text,
+                              title: 'DESCRIÇÃO',
+                              content: widget.project.description,
+                            ),
+                            const SizedBox(height: 16),
+
+                            // observações
+                            _buildGlassCard(
+                              icon: CupertinoIcons.exclamationmark_circle,
+                              title: 'OBSERVAÇÕES',
+                              content: widget.project.observations.isEmpty
+                                  ? 'Nenhuma observação.'
+                                  : widget.project.observations,
+                            ),
+
+                            const SizedBox(height: 40),
+
+                            // delete
+                            Center(
+                              child: CupertinoButton(
+                                onPressed: _handleDelete,
+                                child: Text(
+                                  'Excluir Projeto',
+                                  style: textStyle.copyWith(
+                                    color: Colors.redAccent,
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
                     ),
                   ),
                 ),
@@ -203,8 +245,70 @@ class _ProjectDetailsScreenState extends State<ProjectDetailsScreen> {
     );
   }
 
-  Widget _buildGlassCard({required IconData icon, required String title, required String content}) {
-    const iosFont = TextStyle(fontFamily: '.SF Pro Text', color: Colors.white);
+  Widget _buildHeaderButton({
+    required IconData icon,
+    required Color color,
+    required Color iconColor,
+    required VoidCallback onPressed,
+  }) {
+    return CupertinoButton(
+      padding: EdgeInsets.zero,
+      onPressed: onPressed,
+      child: Container(
+        padding: const EdgeInsets.all(8),
+        decoration: BoxDecoration(
+          color: color,
+          borderRadius: BorderRadius.circular(12),
+        ),
+        child: Icon(icon, color: iconColor),
+      ),
+    );
+  }
+
+  Widget _buildTitleSection(TextStyle baseStyle) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Hero(
+          tag: 'project_title_${widget.project.id}',
+          child: Material(
+            color: Colors.transparent,
+            child: Text(
+              widget.project.name.toUpperCase(),
+              style: baseStyle.copyWith(
+                fontSize: 28,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+          ),
+        ),
+        const SizedBox(height: 10),
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+          decoration: BoxDecoration(
+            color: _statusColor.withValues(alpha:0.2),
+            borderRadius: BorderRadius.circular(20),
+            border: Border.all(color: _statusColor),
+          ),
+          child: Text(
+            _statusLabel,
+            style: baseStyle.copyWith(
+              color: _statusColor,
+              fontSize: 12,
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildGlassCard({
+    required IconData icon,
+    required String title,
+    required String content,
+  }) {
+    const textStyle = TextStyle(color: Colors.white);
 
     return ClipRRect(
       borderRadius: BorderRadius.circular(20),
@@ -214,9 +318,11 @@ class _ProjectDetailsScreenState extends State<ProjectDetailsScreen> {
           width: double.infinity,
           padding: const EdgeInsets.all(20),
           decoration: BoxDecoration(
-            color: Colors.white.withValues(alpha: 0.05),
+            color: Colors.white.withValues(alpha:0.05),
             borderRadius: BorderRadius.circular(20),
-            border: Border.all(color: Colors.white.withValues(alpha: 0.1)),
+            border: Border.all(
+              color: Colors.white.withValues(alpha: .1),
+            ),
           ),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -225,11 +331,25 @@ class _ProjectDetailsScreenState extends State<ProjectDetailsScreen> {
                 children: [
                   Icon(icon, color: Colors.white70, size: 18),
                   const SizedBox(width: 8),
-                  Text(title, style: iosFont.copyWith(color: Colors.white54, fontSize: 12, fontWeight: FontWeight.bold, letterSpacing: 1)),
+                  Text(
+                    title,
+                    style: textStyle.copyWith(
+                      color: Colors.white54,
+                      fontSize: 12,
+                      fontWeight: FontWeight.bold,
+                      letterSpacing: 1,
+                    ),
+                  ),
                 ],
               ),
               const SizedBox(height: 12),
-              Text(content, style: iosFont.copyWith(fontSize: 16, height: 1.4)),
+              Text(
+                content,
+                style: textStyle.copyWith(
+                  fontSize: 16,
+                  height: 1.4,
+                ),
+              ),
             ],
           ),
         ),
@@ -237,21 +357,31 @@ class _ProjectDetailsScreenState extends State<ProjectDetailsScreen> {
     );
   }
 
+  // Cached color calculation
   Color _getStatusColor(String status) {
     switch (status) {
-      case 'ongoing': return Colors.blueAccent;
-      case 'incoming': return Colors.orangeAccent;
-      case 'finished': return Colors.greenAccent;
-      default: return Colors.white;
+      case 'ongoing':
+        return Colors.blueAccent;
+      case 'incoming':
+        return Colors.orangeAccent;
+      case 'finished':
+        return Colors.greenAccent;
+      default:
+        return Colors.white;
     }
   }
 
+  // Cached label calculation
   String _getStatusLabel(String status) {
     switch (status) {
-      case 'ongoing': return 'EM ANDAMENTO';
-      case 'incoming': return 'EM BREVE';
-      case 'finished': return 'FINALIZADO';
-      default: return status.toUpperCase();
+      case 'ongoing':
+        return 'EM ANDAMENTO';
+      case 'incoming':
+        return 'EM BREVE';
+      case 'finished':
+        return 'FINALIZADO';
+      default:
+        return status.toUpperCase();
     }
   }
 }

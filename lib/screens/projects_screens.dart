@@ -14,11 +14,38 @@ class ProjectsScreen extends StatefulWidget {
 }
 
 class _ProjectsScreenState extends State<ProjectsScreen> {
-  final ProjectService _projectService = ProjectService();
+  late final ProjectService _projectService;
+
+  @override
+  void initState() {
+    super.initState();
+    _projectService = ProjectService();
+    _enableHighRefreshRate();
+  }
+
+  void _enableHighRefreshRate() {
+    WidgetsBinding.instance.addPostFrameCallback((_) {});
+  }
+
+  @override
+  void dispose() {
+    super.dispose();
+  }
+
+  void _showAddProjectDialog() {
+    showDialog(
+      context: context,
+      barrierColor: Colors.black.withValues(alpha: 0.7),
+      builder: (context) => const ProjectDialog(),
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
-    const iosFont = TextStyle(fontFamily: '.SF Pro Text', color: Colors.white);
+    const iosFont = TextStyle(
+      fontFamily: '.SF Pro Text',
+      color: Colors.white,
+    );
 
     return Scaffold(
       extendBodyBehindAppBar: true,
@@ -28,69 +55,114 @@ class _ProjectsScreenState extends State<ProjectsScreen> {
           color: CupertinoColors.white,
           onPressed: () => Navigator.of(context).pop(),
         ),
-        middle: Text('Projetos', style: iosFont.copyWith(fontWeight: FontWeight.w600)),
+        middle: Text(
+          'Projetos',
+          style: iosFont.copyWith(fontWeight: FontWeight.w600),
+        ),
         trailing: CupertinoButton(
           padding: EdgeInsets.zero,
+          onPressed: _showAddProjectDialog,
           child: const Icon(CupertinoIcons.add, color: Colors.white),
-          onPressed: () => showDialog(
-            context: context,
-            barrierColor: Colors.black.withValues(alpha: 0.7),
-            builder: (context) => const ProjectDialog(),
-          ),
         ),
         border: Border.all(color: Colors.transparent),
       ),
-      body: Container(
-        decoration: const BoxDecoration(
-          gradient: LinearGradient(
-            begin: Alignment.topCenter,
-            end: Alignment.bottomCenter,
-            colors: [Color(0xFF8B0000), Color(0xFF220000)],
-          ),
-        ),
+      body: const _BackgroundGradient(
         child: SafeArea(
-          child: StreamBuilder<List<Project>>(
-            stream: _projectService.getProjects(),
-            builder: (context, snapshot) {
-              if (snapshot.connectionState == ConnectionState.waiting) {
-                return const Center(child: CupertinoActivityIndicator(color: Colors.white));
-              }
-              if (!snapshot.hasData || snapshot.data!.isEmpty) {
-                return Center(child: Text("Nenhum projeto encontrado", style: iosFont.copyWith(color: Colors.white54)));
-              }
-
-              // Group projects by status
-              final ongoing = snapshot.data!.where((p) => p.status == 'ongoing').toList();
-              final incoming = snapshot.data!.where((p) => p.status == 'incoming').toList();
-              final finished = snapshot.data!.where((p) => p.status == 'finished').toList();
-
-              return ListView(
-                padding: const EdgeInsets.all(16),
-                children: [
-                  if (ongoing.isNotEmpty) ...[
-                    _buildSectionHeader('EM ANDAMENTO'),
-                    ...ongoing.map((p) => _ProjectCard(project: p)),
-                  ],
-                  if (incoming.isNotEmpty) ...[
-                    const SizedBox(height: 24),
-                    _buildSectionHeader('FUTUROS'),
-                    ...incoming.map((p) => _ProjectCard(project: p)),
-                  ],
-                  if (finished.isNotEmpty) ...[
-                    const SizedBox(height: 24),
-                    _buildSectionHeader('FINALIZADOS'),
-                    ...finished.map((p) => _ProjectCard(project: p)),
-                  ],
-                ],
-              );
-            },
-          ),
+          child: _ProjectsList(),
         ),
       ),
     );
   }
+}
 
-  Widget _buildSectionHeader(String title) {
+class _BackgroundGradient extends StatelessWidget {
+  final Widget child;
+
+  const _BackgroundGradient({required this.child});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      decoration: const BoxDecoration(
+        gradient: LinearGradient(
+          begin: Alignment.topCenter,
+          end: Alignment.bottomCenter,
+          colors: [Color(0xFF8B0000), Color(0xFF220000)],
+        ),
+      ),
+      child: child,
+    );
+  }
+}
+
+class _ProjectsList extends StatelessWidget {
+  const _ProjectsList();
+
+  @override
+  Widget build(BuildContext context) {
+    const iosFont = TextStyle(
+      fontFamily: '.SF Pro Text',
+      color: Colors.white,
+    );
+
+    return StreamBuilder<List<Project>>(
+      stream: ProjectService().getProjects(),
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return const Center(
+            child: CupertinoActivityIndicator(color: Colors.white),
+          );
+        }
+        if (!snapshot.hasData || snapshot.data!.isEmpty) {
+          return Center(
+            child: Text(
+              "Nenhum projeto encontrado",
+              style: iosFont.copyWith(color: Colors.white54),
+            ),
+          );
+        }
+
+        final ongoing = snapshot.data!
+            .where((p) => p.status == 'ongoing')
+            .toList();
+        final incoming = snapshot.data!
+            .where((p) => p.status == 'incoming')
+            .toList();
+        final finished = snapshot.data!
+            .where((p) => p.status == 'finished')
+            .toList();
+
+        return ListView(
+          padding: const EdgeInsets.all(16),
+          children: [
+            if (ongoing.isNotEmpty) ...[
+              const _SectionHeader(title: 'EM ANDAMENTO'),
+              ...ongoing.map((p) => _ProjectCard(project: p)),
+            ],
+            if (incoming.isNotEmpty) ...[
+              const SizedBox(height: 24),
+              const _SectionHeader(title: 'FUTUROS'),
+              ...incoming.map((p) => _ProjectCard(project: p)),
+            ],
+            if (finished.isNotEmpty) ...[
+              const SizedBox(height: 24),
+              const _SectionHeader(title: 'FINALIZADOS'),
+              ...finished.map((p) => _ProjectCard(project: p)),
+            ],
+          ],
+        );
+      },
+    );
+  }
+}
+
+class _SectionHeader extends StatelessWidget {
+  final String title;
+
+  const _SectionHeader({required this.title});
+
+  @override
+  Widget build(BuildContext context) {
     return Padding(
       padding: const EdgeInsets.only(bottom: 12, left: 4),
       child: Text(
@@ -109,43 +181,50 @@ class _ProjectsScreenState extends State<ProjectsScreen> {
 
 class _ProjectCard extends StatelessWidget {
   final Project project;
+
   const _ProjectCard({required this.project});
+
+  static final _cardBg = Colors.white.withValues(alpha: 0.1);
+  static final _borderColor = Colors.white.withValues(alpha: 0.1);
 
   @override
   Widget build(BuildContext context) {
     final dateFormat = DateFormat('dd/MM');
-    const iosFont = TextStyle(fontFamily: '.SF Pro Text', color: Colors.white);
+    const iosFont = TextStyle(
+      fontFamily: '.SF Pro Text',
+      color: Colors.white,
+    );
 
     return GestureDetector(
       onTap: () => Navigator.push(
         context,
-        CupertinoPageRoute(builder: (context) => ProjectDetailsScreen(project: project)),
+        CupertinoPageRoute(
+          builder: (context) => ProjectDetailsScreen(project: project),
+        ),
       ),
       child: Container(
         margin: const EdgeInsets.only(bottom: 12),
         child: ClipRRect(
           borderRadius: BorderRadius.circular(16),
           child: BackdropFilter(
-            filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
+            filter: ImageFilter.blur(sigmaX: 8, sigmaY: 8),
             child: Container(
               padding: const EdgeInsets.all(16),
               decoration: BoxDecoration(
-                color: Colors.white.withValues(alpha: 0.1),
+                color: _cardBg,
                 borderRadius: BorderRadius.circular(16),
-                border: Border.all(color: Colors.white.withValues(alpha: 0.1)),
+                border: Border.all(color: _borderColor),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withValues(alpha: 0.1),
+                    blurRadius: 8,
+                    offset: const Offset(0, 2),
+                  ),
+                ],
               ),
               child: Row(
                 children: [
-                  Container(
-                    width: 50,
-                    height: 50,
-                    decoration: BoxDecoration(
-                      color: _getStatusColor(project.status).withValues(alpha: 0.2),
-                      borderRadius: BorderRadius.circular(12),
-                      border: Border.all(color: _getStatusColor(project.status).withValues(alpha: 0.5)),
-                    ),
-                    child: Icon(CupertinoIcons.doc_text_fill, color: _getStatusColor(project.status)),
-                  ),
+                  _ProjectIcon(status: project.status),
                   const SizedBox(width: 16),
                   Expanded(
                     child: Column(
@@ -153,12 +232,22 @@ class _ProjectCard extends StatelessWidget {
                       children: [
                         Text(
                           project.name,
-                          style: iosFont.copyWith(fontSize: 16, fontWeight: FontWeight.bold),
+                          style: iosFont.copyWith(
+                            fontSize: 16,
+                            fontWeight: FontWeight.bold,
+                          ),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
                         ),
                         const SizedBox(height: 4),
                         Text(
                           '${project.city}, ${project.state}',
-                          style: iosFont.copyWith(fontSize: 12, color: Colors.white70),
+                          style: iosFont.copyWith(
+                            fontSize: 12,
+                            color: Colors.white70,
+                          ),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
                         ),
                       ],
                     ),
@@ -168,11 +257,17 @@ class _ProjectCard extends StatelessWidget {
                     children: [
                       Text(
                         'Fim',
-                        style: iosFont.copyWith(fontSize: 10, color: Colors.white38),
+                        style: iosFont.copyWith(
+                          fontSize: 10,
+                          color: Colors.white38,
+                        ),
                       ),
                       Text(
                         dateFormat.format(project.endDate),
-                        style: iosFont.copyWith(fontSize: 12, fontWeight: FontWeight.w600),
+                        style: iosFont.copyWith(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w600,
+                        ),
                       ),
                     ],
                   ),
@@ -184,20 +279,48 @@ class _ProjectCard extends StatelessWidget {
       ),
     );
   }
+}
+
+class _ProjectIcon extends StatelessWidget {
+  final String status;
+
+  const _ProjectIcon({required this.status});
 
   Color _getStatusColor(String status) {
     switch (status) {
-      case 'ongoing': return Colors.blueAccent;
-      case 'incoming': return Colors.orangeAccent;
-      case 'finished': return Colors.greenAccent;
-      default: return Colors.white;
+      case 'ongoing':
+        return Colors.blueAccent;
+      case 'incoming':
+        return Colors.orangeAccent;
+      case 'finished':
+        return Colors.greenAccent;
+      default:
+        return Colors.white;
     }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final color = _getStatusColor(status);
+
+    return Container(
+      width: 50,
+      height: 50,
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.2),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: color.withValues(alpha: 0.5)),
+      ),
+      child: Icon(
+        CupertinoIcons.doc_text_fill,
+        color: color,
+      ),
+    );
   }
 }
 
-// --- ADD/EDIT DIALOG ---
 class ProjectDialog extends StatefulWidget {
-  final Project? project; // If null, create new. If exists, edit.
+  final Project? project;
 
   const ProjectDialog({super.key, this.project});
 
@@ -217,6 +340,11 @@ class _ProjectDialogState extends State<ProjectDialog> {
   DateTime _endDate = DateTime.now().add(const Duration(days: 30));
   String _status = 'ongoing';
 
+  static final _dialogBg = const Color(0xFF2C2C2C).withValues(alpha: 0.92);
+  static final _borderColor = Colors.white.withValues(alpha: 0.1);
+  static final _fieldBg = Colors.white.withValues(alpha: 0.05);
+  static final _segmentBg = Colors.white.withValues(alpha: 0.1);
+
   @override
   void initState() {
     super.initState();
@@ -231,6 +359,16 @@ class _ProjectDialogState extends State<ProjectDialog> {
       _endDate = p.endDate;
       _status = p.status;
     }
+  }
+
+  @override
+  void dispose() {
+    _nameCtrl.dispose();
+    _cityCtrl.dispose();
+    _stateCtrl.dispose();
+    _descCtrl.dispose();
+    _obsCtrl.dispose();
+    super.dispose();
   }
 
   Future<void> _selectDate(BuildContext context, bool isStart) async {
@@ -253,7 +391,7 @@ class _ProjectDialogState extends State<ProjectDialog> {
         );
       },
     );
-    if (picked != null) {
+    if (picked != null && mounted) {
       setState(() {
         if (isStart) {
           _startDate = picked;
@@ -264,9 +402,43 @@ class _ProjectDialogState extends State<ProjectDialog> {
     }
   }
 
+  void _handleSave() {
+    if (_nameCtrl.text.trim().isEmpty || _cityCtrl.text.trim().isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Nome e Cidade são obrigatórios'),
+          backgroundColor: Colors.redAccent,
+        ),
+      );
+      return;
+    }
+
+    final p = Project(
+      id: widget.project?.id ?? '',
+      name: _nameCtrl.text.trim(),
+      city: _cityCtrl.text.trim(),
+      state: _stateCtrl.text.trim(),
+      startDate: _startDate,
+      endDate: _endDate,
+      description: _descCtrl.text.trim(),
+      observations: _obsCtrl.text.trim(),
+      status: _status,
+    );
+
+    if (widget.project == null) {
+      ProjectService().addProject(p);
+    } else {
+      ProjectService().updateProject(p);
+    }
+    Navigator.pop(context);
+  }
+
   @override
   Widget build(BuildContext context) {
-    const iosFont = TextStyle(fontFamily: '.SF Pro Text', color: Colors.white);
+    const iosFont = TextStyle(
+      fontFamily: '.SF Pro Text',
+      color: Colors.white,
+    );
 
     return Center(
       child: Material(
@@ -274,14 +446,24 @@ class _ProjectDialogState extends State<ProjectDialog> {
         child: ClipRRect(
           borderRadius: BorderRadius.circular(20),
           child: BackdropFilter(
-            filter: ImageFilter.blur(sigmaX: 20, sigmaY: 20),
+            filter: ImageFilter.blur(sigmaX: 15, sigmaY: 15),
             child: Container(
               width: 340,
+              constraints: BoxConstraints(
+                maxHeight: MediaQuery.of(context).size.height * 0.85,
+              ),
               padding: const EdgeInsets.all(24),
               decoration: BoxDecoration(
-                color: const Color(0xFF2C2C2C).withValues(alpha: 0.85),
+                color: _dialogBg,
                 borderRadius: BorderRadius.circular(20),
-                border: Border.all(color: Colors.white.withValues(alpha: 0.1)),
+                border: Border.all(color: _borderColor),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withValues(alpha: 0.3),
+                    blurRadius: 20,
+                    spreadRadius: 5,
+                  ),
+                ],
               ),
               child: Form(
                 key: _formKey,
@@ -291,85 +473,137 @@ class _ProjectDialogState extends State<ProjectDialog> {
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
                       Text(
-                        widget.project == null ? 'Novo Projeto' : 'Editar Projeto',
-                        style: iosFont.copyWith(fontSize: 20, fontWeight: FontWeight.bold),
+                        widget.project == null
+                            ? 'Novo Projeto'
+                            : 'Editar Projeto',
+                        style: iosFont.copyWith(
+                          fontSize: 20,
+                          fontWeight: FontWeight.bold,
+                        ),
                         textAlign: TextAlign.center,
                       ),
                       const SizedBox(height: 24),
-
-                      _buildTextField(_nameCtrl, 'Nome do Projeto', CupertinoIcons.doc_text),
+                      _DialogTextField(
+                        controller: _nameCtrl,
+                        hint: 'Nome do Projeto',
+                        icon: CupertinoIcons.doc_text,
+                      ),
                       const SizedBox(height: 12),
                       Row(
                         children: [
-                          Expanded(child: _buildTextField(_cityCtrl, 'Cidade', CupertinoIcons.map)),
+                          Expanded(
+                            child: _DialogTextField(
+                              controller: _cityCtrl,
+                              hint: 'Cidade',
+                              icon: CupertinoIcons.map,
+                            ),
+                          ),
                           const SizedBox(width: 8),
-                          SizedBox(width: 80, child: _buildTextField(_stateCtrl, 'UF', CupertinoIcons.map_pin_ellipse)),
+                          SizedBox(
+                            width: 80,
+                            child: _DialogTextField(
+                              controller: _stateCtrl,
+                              hint: 'UF',
+                              icon: CupertinoIcons.map_pin_ellipse,
+                            ),
+                          ),
                         ],
                       ),
                       const SizedBox(height: 12),
-                      _buildTextField(_descCtrl, 'Descrição', CupertinoIcons.text_alignleft),
+                      _DialogTextField(
+                        controller: _descCtrl,
+                        hint: 'Descrição',
+                        icon: CupertinoIcons.text_alignleft,
+                      ),
                       const SizedBox(height: 12),
-                      _buildTextField(_obsCtrl, 'Observações', CupertinoIcons.exclamationmark_circle, maxLines: 2),
+                      _DialogTextField(
+                        controller: _obsCtrl,
+                        hint: 'Observações',
+                        icon: CupertinoIcons.exclamationmark_circle,
+                        maxLines: 2,
+                      ),
                       const SizedBox(height: 16),
-
-                      // Status Picker
                       CupertinoSlidingSegmentedControl<String>(
-                        backgroundColor: Colors.white.withValues(alpha: 0.1),
+                        backgroundColor: _segmentBg,
                         thumbColor: Colors.redAccent,
                         groupValue: _status,
                         children: const {
-                          'ongoing': Padding(padding: EdgeInsets.symmetric(horizontal: 4), child: Text('Andamento', style: TextStyle(color: Colors.white, fontSize: 10))),
-                          'incoming': Padding(padding: EdgeInsets.symmetric(horizontal: 4), child: Text('Futuro', style: TextStyle(color: Colors.white, fontSize: 10))),
-                          'finished': Padding(padding: EdgeInsets.symmetric(horizontal: 4), child: Text('Final', style: TextStyle(color: Colors.white, fontSize: 10))),
+                          'ongoing': Padding(
+                            padding: EdgeInsets.symmetric(horizontal: 4),
+                            child: Text(
+                              'Andamento',
+                              style: TextStyle(
+                                color: Colors.white,
+                                fontSize: 10,
+                              ),
+                            ),
+                          ),
+                          'incoming': Padding(
+                            padding: EdgeInsets.symmetric(horizontal: 4),
+                            child: Text(
+                              'Futuro',
+                              style: TextStyle(
+                                color: Colors.white,
+                                fontSize: 10,
+                              ),
+                            ),
+                          ),
+                          'finished': Padding(
+                            padding: EdgeInsets.symmetric(horizontal: 4),
+                            child: Text(
+                              'Final',
+                              style: TextStyle(
+                                color: Colors.white,
+                                fontSize: 10,
+                              ),
+                            ),
+                          ),
                         },
                         onValueChanged: (v) => setState(() => _status = v!),
                       ),
                       const SizedBox(height: 16),
-
-                      // Date Buttons
                       Row(
                         children: [
-                          Expanded(child: _buildDateBtn('Início', _startDate, () => _selectDate(context, true))),
+                          Expanded(
+                            child: _DateButton(
+                              label: 'Início',
+                              date: _startDate,
+                              onTap: () => _selectDate(context, true),
+                            ),
+                          ),
                           const SizedBox(width: 10),
-                          Expanded(child: _buildDateBtn('Fim', _endDate, () => _selectDate(context, false))),
+                          Expanded(
+                            child: _DateButton(
+                              label: 'Fim',
+                              date: _endDate,
+                              onTap: () => _selectDate(context, false),
+                            ),
+                          ),
                         ],
                       ),
-
                       const SizedBox(height: 24),
-
-                      // Actions
                       Row(
                         mainAxisAlignment: MainAxisAlignment.end,
                         children: [
                           CupertinoButton(
-                            child: Text('Cancelar', style: iosFont.copyWith(color: Colors.white60)),
                             onPressed: () => Navigator.pop(context),
+                            child: Text(
+                              'Cancelar',
+                              style: iosFont.copyWith(color: Colors.white60),
+                            ),
                           ),
                           CupertinoButton.filled(
-                            padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 10),
-                            child: Text('Salvar', style: iosFont.copyWith(fontWeight: FontWeight.bold)),
-                            onPressed: () {
-                              if (_nameCtrl.text.isNotEmpty && _cityCtrl.text.isNotEmpty) {
-                                final p = Project(
-                                  id: widget.project?.id ?? '', // ID handled by Fire service on add, or used on update
-                                  name: _nameCtrl.text,
-                                  city: _cityCtrl.text,
-                                  state: _stateCtrl.text,
-                                  startDate: _startDate,
-                                  endDate: _endDate,
-                                  description: _descCtrl.text,
-                                  observations: _obsCtrl.text,
-                                  status: _status,
-                                );
-
-                                if (widget.project == null) {
-                                  ProjectService().addProject(p);
-                                } else {
-                                  ProjectService().updateProject(p);
-                                }
-                                Navigator.pop(context);
-                              }
-                            },
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 24,
+                              vertical: 10,
+                            ),
+                            onPressed: _handleSave,
+                            child: Text(
+                              'Salvar',
+                              style: iosFont.copyWith(
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
                           ),
                         ],
                       ),
@@ -383,44 +617,94 @@ class _ProjectDialogState extends State<ProjectDialog> {
       ),
     );
   }
+}
 
-  Widget _buildTextField(TextEditingController ctrl, String hint, IconData icon, {int maxLines = 1}) {
+class _DialogTextField extends StatelessWidget {
+  final TextEditingController controller;
+  final String hint;
+  final IconData icon;
+  final int maxLines;
+
+  const _DialogTextField({
+    required this.controller,
+    required this.hint,
+    required this.icon,
+    this.maxLines = 1,
+  });
+
+  static final _fieldBg = Colors.white.withValues(alpha: 0.05);
+  static final _borderColor = Colors.white.withValues(alpha: 0.1);
+  static final _hintColor = Colors.white.withValues(alpha: 0.3);
+
+  @override
+  Widget build(BuildContext context) {
     return Container(
       decoration: BoxDecoration(
-        color: Colors.white.withValues(alpha: 0.05),
+        color: _fieldBg,
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: Colors.white.withValues(alpha: 0.1)),
+        border: Border.all(color: _borderColor),
       ),
       child: TextField(
-        controller: ctrl,
+        controller: controller,
         maxLines: maxLines,
         style: const TextStyle(color: Colors.white),
         decoration: InputDecoration(
           prefixIcon: Icon(icon, color: Colors.white54, size: 20),
           hintText: hint,
-          hintStyle: TextStyle(color: Colors.white.withValues(alpha: 0.3)),
+          hintStyle: TextStyle(color: _hintColor),
           border: InputBorder.none,
-          contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+          contentPadding: const EdgeInsets.symmetric(
+            horizontal: 16,
+            vertical: 14,
+          ),
         ),
       ),
     );
   }
+}
 
-  Widget _buildDateBtn(String label, DateTime date, VoidCallback onTap) {
+class _DateButton extends StatelessWidget {
+  final String label;
+  final DateTime date;
+  final VoidCallback onTap;
+
+  const _DateButton({
+    required this.label,
+    required this.date,
+    required this.onTap,
+  });
+
+  static final _buttonBg = Colors.white.withValues(alpha: 0.05);
+  static final _borderColor = Colors.white.withValues(alpha: 0.1);
+
+  @override
+  Widget build(BuildContext context) {
     return GestureDetector(
       onTap: onTap,
       child: Container(
         padding: const EdgeInsets.all(12),
         decoration: BoxDecoration(
-          color: Colors.white.withValues(alpha: 0.05),
+          color: _buttonBg,
           borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: Colors.white.withValues(alpha: 0.1)),
+          border: Border.all(color: _borderColor),
         ),
         child: Column(
           children: [
-            Text(label, style: const TextStyle(color: Colors.white54, fontSize: 10)),
+            Text(
+              label,
+              style: const TextStyle(
+                color: Colors.white54,
+                fontSize: 10,
+              ),
+            ),
             const SizedBox(height: 4),
-            Text(DateFormat('dd/MM/yy').format(date), style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+            Text(
+              DateFormat('dd/MM/yy').format(date),
+              style: const TextStyle(
+                color: Colors.white,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
           ],
         ),
       ),

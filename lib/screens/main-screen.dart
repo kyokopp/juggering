@@ -6,11 +6,14 @@ import 'package:intl/intl.dart';
 import 'contacts_screen.dart';
 import 'profile_screen.dart';
 import 'package:juggering/screens/projects_screens.dart';
+import 'events_screen.dart';
 import '../services/contact_service.dart';
 import '../services/contact_model.dart';
 import '../services/project_service.dart';
 import '../services/project_model.dart';
-import 'package:juggering/screens/responsive.dart';
+import '../services/event_service.dart';
+import '../services/event_model.dart';
+import 'responsive.dart';
 
 class MainScreen extends StatefulWidget {
   const MainScreen({super.key});
@@ -22,13 +25,14 @@ class MainScreen extends StatefulWidget {
 class _MainScreenState extends State<MainScreen> {
   bool _isSidebarOpen = false;
 
-  // Services
+
   late final ContactService _contactService;
   late final ProjectService _projectService;
+  late final EventService _eventService;
 
-  // Streams
   late final Stream<List<Contact>> _favoritesStream;
   late final Stream<List<Project>> _dashboardProjectsStream;
+  late final Stream<List<Event>> _upcomingEventsStream; // NEW
 
   String? _cachedFirstName;
 
@@ -37,9 +41,11 @@ class _MainScreenState extends State<MainScreen> {
     super.initState();
     _contactService = ContactService();
     _projectService = ProjectService();
+    _eventService = EventService(); // Init
 
     _favoritesStream = _contactService.getFavoriteContacts();
     _dashboardProjectsStream = _projectService.getDashboardProjects();
+    _upcomingEventsStream = _eventService.getUpcomingEvents(); // Init
 
     _cacheUserName();
   }
@@ -72,6 +78,7 @@ class _MainScreenState extends State<MainScreen> {
             onMenuTap: _toggleSidebar,
             favoritesStream: _favoritesStream,
             projectsStream: _dashboardProjectsStream,
+            eventsStream: _upcomingEventsStream, // Pass down
           ),
 
           // Sidebar Dim Effect
@@ -86,7 +93,6 @@ class _MainScreenState extends State<MainScreen> {
                 ),
               ),
             ),
-
 
           _AnimatedSidebar(
             isOpen: _isSidebarOpen,
@@ -109,12 +115,14 @@ class _MainContent extends StatelessWidget {
   final VoidCallback onMenuTap;
   final Stream<List<Contact>> favoritesStream;
   final Stream<List<Project>> projectsStream;
+  final Stream<List<Event>> eventsStream;
 
   const _MainContent({
     required this.cachedFirstName,
     required this.onMenuTap,
     required this.favoritesStream,
     required this.projectsStream,
+    required this.eventsStream,
   });
 
   @override
@@ -132,6 +140,7 @@ class _MainContent extends StatelessWidget {
       child: SafeArea(
         child: Column(
           children: [
+            // Top Container
             ClipRRect(
               borderRadius: const BorderRadius.only(
                 bottomLeft: Radius.circular(20),
@@ -220,16 +229,13 @@ class _MainContent extends StatelessWidget {
 
                       const SizedBox(height: 16),
 
-                      // REPLACED: Ongoing Projects Card
+                      // Ongoing Projects Card
                       _ProjectsDashboardCard(projectsStream: projectsStream),
 
                       const SizedBox(height: 16),
 
-                      const _DashboardCard(
-                        title: 'Notificações',
-                        content: 'Você não tem novas notificações.',
-                        icon: CupertinoIcons.bell,
-                      ),
+                      // NEW: Replaced Notifications with Upcoming Events
+                      _UpcomingEventsCard(eventsStream: eventsStream),
                     ],
                   ),
                 ),
@@ -237,6 +243,94 @@ class _MainContent extends StatelessWidget {
             ),
           ],
         ),
+      ),
+    );
+  }
+}
+
+// NEW WIDGET: Upcoming Events Card
+class _UpcomingEventsCard extends StatelessWidget {
+  final Stream<List<Event>> eventsStream;
+  const _UpcomingEventsCard({required this.eventsStream});
+
+  @override
+  Widget build(BuildContext context) {
+    const iosFont = TextStyle(fontFamily: '.SF Pro Text', color: Colors.white);
+    final dayFormat = DateFormat('dd');
+    final monthFormat = DateFormat('MMM');
+
+    return Container(
+      padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        color: CupertinoColors.systemGrey.withValues(alpha: 0.15),
+        borderRadius: BorderRadius.circular(15),
+        border: Border.all(color: CupertinoColors.systemGrey2.withValues(alpha: 0.3), width: 0.5),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Icon(CupertinoIcons.calendar, color: Colors.orangeAccent, size: 24),
+              const SizedBox(width: 10),
+              Text(
+                  'Próximos Eventos',
+                  style: iosFont.copyWith(fontSize: 18, fontWeight: FontWeight.bold)
+              ),
+            ],
+          ),
+          const SizedBox(height: 16),
+          StreamBuilder<List<Event>>(
+            stream: eventsStream,
+            builder: (context, snapshot) {
+              if (snapshot.connectionState == ConnectionState.waiting) {
+                return const Center(child: CupertinoActivityIndicator(color: Colors.white));
+              }
+              if (!snapshot.hasData || snapshot.data!.isEmpty) {
+                return Text('Nenhum evento próximo.', style: iosFont.copyWith(color: Colors.white38));
+              }
+
+              return Column(
+                children: snapshot.data!.map((event) => Container(
+                  margin: const EdgeInsets.only(bottom: 8),
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: Colors.white.withValues(alpha: 0.05),
+                    borderRadius: BorderRadius.circular(10),
+                    border: Border.all(color: Colors.white10),
+                  ),
+                  child: Row(
+                    children: [
+                      // Date Box
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                        decoration: BoxDecoration(
+                          color: Colors.orangeAccent.withValues(alpha: 0.2),
+                          borderRadius: BorderRadius.circular(8),
+                          border: Border.all(color: Colors.orangeAccent.withValues(alpha: 0.5)),
+                        ),
+                        child: Column(
+                          children: [
+                            Text(dayFormat.format(event.date), style: iosFont.copyWith(fontSize: 16, fontWeight: FontWeight.bold)),
+                            Text(monthFormat.format(event.date).toUpperCase(), style: iosFont.copyWith(fontSize: 10, color: Colors.white70)),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(width: 16),
+                      Expanded(
+                        child: Text(
+                          event.name,
+                          style: iosFont.copyWith(fontSize: 16, fontWeight: FontWeight.w500),
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                    ],
+                  ),
+                )).toList(),
+              );
+            },
+          ),
+        ],
       ),
     );
   }
@@ -442,57 +536,6 @@ class _FavoriteContactCard extends StatelessWidget {
   }
 }
 
-class _DashboardCard extends StatelessWidget {
-  final String title;
-  final String content;
-  final IconData icon;
-
-  const _DashboardCard({
-    required this.title,
-    required this.content,
-    required this.icon,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    const iosFont = TextStyle(fontFamily: '.SF Pro Text', color: Colors.white);
-
-    return Container(
-      padding: const EdgeInsets.all(20),
-      decoration: BoxDecoration(
-        color: CupertinoColors.systemGrey.withValues(alpha: 0.15),
-        borderRadius: BorderRadius.circular(15),
-        border: Border.all(
-          color: CupertinoColors.systemGrey2.withValues(alpha: 0.3),
-          width: 0.5,
-        ),
-      ),
-      child: Row(
-        children: [
-          Icon(icon, color: CupertinoColors.systemRed, size: 40),
-          const SizedBox(width: 16),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  title,
-                  style: iosFont.copyWith(fontSize: 18, fontWeight: FontWeight.bold),
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  content,
-                  style: iosFont.copyWith(color: CupertinoColors.systemGrey3),
-                ),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
 class _AnimatedSidebar extends StatelessWidget {
   final bool isOpen;
   final double width;
@@ -570,6 +613,17 @@ class _AnimatedSidebar extends StatelessWidget {
                       onClose();
                       Navigator.of(context).push(
                         CupertinoPageRoute(builder: (context) => const ProjectsScreen()),
+                      );
+                    },
+                  ),
+                  //Eventos
+                  _SidebarButton(
+                    icon: CupertinoIcons.calendar,
+                    label: 'Eventos',
+                    onTap: () {
+                      onClose();
+                      Navigator.of(context).push(
+                        CupertinoPageRoute(builder: (context) => const EventsScreen()),
                       );
                     },
                   ),
