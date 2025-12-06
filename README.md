@@ -102,7 +102,7 @@ flutter run
 
 ## 👥 Autores
 
-Este projeto foi desenvolvido com ❤️ por:
+Este projeto foi desenvolvido por:
 
 <table>
   <tr>
