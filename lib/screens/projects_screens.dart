@@ -1,6 +1,7 @@
 import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:flutter/cupertino.dart';
+import 'package:flutter/services.dart';
 import 'package:intl/intl.dart';
 import '../services/project_model.dart';
 import '../services/project_service.dart';
@@ -14,32 +15,6 @@ class ProjectsScreen extends StatefulWidget {
 }
 
 class _ProjectsScreenState extends State<ProjectsScreen> {
-  late final ProjectService _projectService;
-
-  @override
-  void initState() {
-    super.initState();
-    _projectService = ProjectService();
-    _enableHighRefreshRate();
-  }
-
-  void _enableHighRefreshRate() {
-    WidgetsBinding.instance.addPostFrameCallback((_) {});
-  }
-
-  @override
-  void dispose() {
-    super.dispose();
-  }
-
-  void _showAddProjectDialog() {
-    showDialog(
-      context: context,
-      barrierColor: Colors.black.withValues(alpha: 0.7),
-      builder: (context) => const ProjectDialog(),
-    );
-  }
-
   @override
   Widget build(BuildContext context) {
     const iosFont = TextStyle(
@@ -61,14 +36,24 @@ class _ProjectsScreenState extends State<ProjectsScreen> {
         ),
         trailing: CupertinoButton(
           padding: EdgeInsets.zero,
-          onPressed: _showAddProjectDialog,
+          onPressed: () {
+            HapticFeedback.selectionClick();
+            showDialog(
+              context: context,
+              barrierColor: Colors.black.withValues(alpha: 0.7),
+              builder: (context) => const ProjectDialog(),
+            );
+          },
           child: const Icon(CupertinoIcons.add, color: Colors.white),
         ),
         border: Border.all(color: Colors.transparent),
       ),
-      body: const _BackgroundGradient(
-        child: SafeArea(
-          child: _ProjectsList(),
+      body: AnnotatedRegion<SystemUiOverlayStyle>(
+        value: SystemUiOverlayStyle.light,
+        child: const _BackgroundGradient(
+          child: SafeArea(
+            child: _ProjectsList(),
+          ),
         ),
       ),
     );
@@ -108,48 +93,63 @@ class _ProjectsList extends StatelessWidget {
     return StreamBuilder<List<Project>>(
       stream: ProjectService().getProjects(),
       builder: (context, snapshot) {
-        if (snapshot.connectionState == ConnectionState.waiting) {
-          return const Center(
+        Widget content;
+
+        if (snapshot.hasError) {
+          content = Center(
+            child: Text(
+              "Erro ao carregar projetos",
+              style: iosFont.copyWith(color: Colors.white54),
+            ),
+          );
+        } else if (snapshot.connectionState == ConnectionState.waiting) {
+          content = const Center(
             child: CupertinoActivityIndicator(color: Colors.white),
           );
-        }
-        if (!snapshot.hasData || snapshot.data!.isEmpty) {
-          return Center(
+        } else if (!snapshot.hasData || snapshot.data!.isEmpty) {
+          content = Center(
             child: Text(
               "Nenhum projeto encontrado",
               style: iosFont.copyWith(color: Colors.white54),
             ),
           );
+        } else {
+          final ongoing = snapshot.data!
+              .where((p) => p.status == 'ongoing')
+              .toList();
+          final incoming = snapshot.data!
+              .where((p) => p.status == 'incoming')
+              .toList();
+          final finished = snapshot.data!
+              .where((p) => p.status == 'finished')
+              .toList();
+
+          content = ListView(
+            padding: const EdgeInsets.all(16),
+            physics: const BouncingScrollPhysics(),
+            children: [
+              if (ongoing.isNotEmpty) ...[
+                const _SectionHeader(title: 'EM ANDAMENTO'),
+                ...ongoing.map((p) => _ProjectCard(project: p)),
+              ],
+              if (incoming.isNotEmpty) ...[
+                const SizedBox(height: 24),
+                const _SectionHeader(title: 'FUTUROS'),
+                ...incoming.map((p) => _ProjectCard(project: p)),
+              ],
+              if (finished.isNotEmpty) ...[
+                const SizedBox(height: 24),
+                const _SectionHeader(title: 'FINALIZADOS'),
+                ...finished.map((p) => _ProjectCard(project: p)),
+              ],
+              const SizedBox(height: 40),
+            ],
+          );
         }
 
-        final ongoing = snapshot.data!
-            .where((p) => p.status == 'ongoing')
-            .toList();
-        final incoming = snapshot.data!
-            .where((p) => p.status == 'incoming')
-            .toList();
-        final finished = snapshot.data!
-            .where((p) => p.status == 'finished')
-            .toList();
-
-        return ListView(
-          padding: const EdgeInsets.all(16),
-          children: [
-            if (ongoing.isNotEmpty) ...[
-              const _SectionHeader(title: 'EM ANDAMENTO'),
-              ...ongoing.map((p) => _ProjectCard(project: p)),
-            ],
-            if (incoming.isNotEmpty) ...[
-              const SizedBox(height: 24),
-              const _SectionHeader(title: 'FUTUROS'),
-              ...incoming.map((p) => _ProjectCard(project: p)),
-            ],
-            if (finished.isNotEmpty) ...[
-              const SizedBox(height: 24),
-              const _SectionHeader(title: 'FINALIZADOS'),
-              ...finished.map((p) => _ProjectCard(project: p)),
-            ],
-          ],
+        return AnimatedSwitcher(
+          duration: const Duration(milliseconds: 300),
+          child: content,
         );
       },
     );
@@ -196,12 +196,15 @@ class _ProjectCard extends StatelessWidget {
     );
 
     return GestureDetector(
-      onTap: () => Navigator.push(
-        context,
-        CupertinoPageRoute(
-          builder: (context) => ProjectDetailsScreen(project: project),
-        ),
-      ),
+      onTap: () {
+        HapticFeedback.lightImpact();
+        Navigator.push(
+          context,
+          CupertinoPageRoute(
+            builder: (context) => ProjectDetailsScreen(project: project),
+          ),
+        );
+      },
       child: Container(
         margin: const EdgeInsets.only(bottom: 12),
         child: ClipRRect(
@@ -330,35 +333,34 @@ class ProjectDialog extends StatefulWidget {
 
 class _ProjectDialogState extends State<ProjectDialog> {
   final _formKey = GlobalKey<FormState>();
-  final _nameCtrl = TextEditingController();
-  final _cityCtrl = TextEditingController();
-  final _stateCtrl = TextEditingController();
-  final _descCtrl = TextEditingController();
-  final _obsCtrl = TextEditingController();
 
-  DateTime _startDate = DateTime.now();
-  DateTime _endDate = DateTime.now().add(const Duration(days: 30));
-  String _status = 'ongoing';
+  late TextEditingController _nameCtrl;
+  late TextEditingController _cityCtrl;
+  late TextEditingController _stateCtrl;
+  late TextEditingController _descCtrl;
+  late TextEditingController _obsCtrl;
+
+  late DateTime _startDate;
+  late DateTime _endDate;
+  late String _status;
 
   static final _dialogBg = const Color(0xFF2C2C2C).withValues(alpha: 0.92);
   static final _borderColor = Colors.white.withValues(alpha: 0.1);
-  static final _fieldBg = Colors.white.withValues(alpha: 0.05);
   static final _segmentBg = Colors.white.withValues(alpha: 0.1);
 
   @override
   void initState() {
     super.initState();
-    if (widget.project != null) {
-      final p = widget.project!;
-      _nameCtrl.text = p.name;
-      _cityCtrl.text = p.city;
-      _stateCtrl.text = p.state;
-      _descCtrl.text = p.description;
-      _obsCtrl.text = p.observations;
-      _startDate = p.startDate;
-      _endDate = p.endDate;
-      _status = p.status;
-    }
+    final p = widget.project;
+    _nameCtrl = TextEditingController(text: p?.name ?? '');
+    _cityCtrl = TextEditingController(text: p?.city ?? '');
+    _stateCtrl = TextEditingController(text: p?.state ?? '');
+    _descCtrl = TextEditingController(text: p?.description ?? '');
+    _obsCtrl = TextEditingController(text: p?.observations ?? '');
+
+    _startDate = p?.startDate ?? DateTime.now();
+    _endDate = p?.endDate ?? DateTime.now().add(const Duration(days: 30));
+    _status = p?.status ?? 'ongoing';
   }
 
   @override
@@ -372,6 +374,7 @@ class _ProjectDialogState extends State<ProjectDialog> {
   }
 
   Future<void> _selectDate(BuildContext context, bool isStart) async {
+    HapticFeedback.selectionClick();
     final picked = await showDatePicker(
       context: context,
       initialDate: isStart ? _startDate : _endDate,
@@ -385,7 +388,7 @@ class _ProjectDialogState extends State<ProjectDialog> {
               onPrimary: Colors.white,
               surface: Color(0xFF2C2C2C),
               onSurface: Colors.white,
-            ),
+            ), dialogTheme: DialogThemeData(backgroundColor: const Color(0xFF2C2C2C)),
           ),
           child: child!,
         );
@@ -395,6 +398,9 @@ class _ProjectDialogState extends State<ProjectDialog> {
       setState(() {
         if (isStart) {
           _startDate = picked;
+          if (_startDate.isAfter(_endDate)) {
+            _endDate = _startDate.add(const Duration(days: 1));
+          }
         } else {
           _endDate = picked;
         }
@@ -403,34 +409,29 @@ class _ProjectDialogState extends State<ProjectDialog> {
   }
 
   void _handleSave() {
-    if (_nameCtrl.text.trim().isEmpty || _cityCtrl.text.trim().isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Nome e Cidade são obrigatórios'),
-          backgroundColor: Colors.redAccent,
-        ),
+    if (_formKey.currentState!.validate()) {
+      HapticFeedback.mediumImpact();
+      final p = Project(
+        id: widget.project?.id ?? '',
+        name: _nameCtrl.text.trim(),
+        city: _cityCtrl.text.trim(),
+        state: _stateCtrl.text.trim().toUpperCase(),
+        startDate: _startDate,
+        endDate: _endDate,
+        description: _descCtrl.text.trim(),
+        observations: _obsCtrl.text.trim(),
+        status: _status,
       );
-      return;
-    }
 
-    final p = Project(
-      id: widget.project?.id ?? '',
-      name: _nameCtrl.text.trim(),
-      city: _cityCtrl.text.trim(),
-      state: _stateCtrl.text.trim(),
-      startDate: _startDate,
-      endDate: _endDate,
-      description: _descCtrl.text.trim(),
-      observations: _obsCtrl.text.trim(),
-      status: _status,
-    );
-
-    if (widget.project == null) {
-      ProjectService().addProject(p);
+      if (widget.project == null) {
+        ProjectService().addProject(p);
+      } else {
+        ProjectService().updateProject(p);
+      }
+      Navigator.pop(context);
     } else {
-      ProjectService().updateProject(p);
+      HapticFeedback.heavyImpact();
     }
-    Navigator.pop(context);
   }
 
   @override
@@ -487,6 +488,9 @@ class _ProjectDialogState extends State<ProjectDialog> {
                         controller: _nameCtrl,
                         hint: 'Nome do Projeto',
                         icon: CupertinoIcons.doc_text,
+                        textCapitalization: TextCapitalization.words,
+                        textInputAction: TextInputAction.next,
+                        validator: (v) => v?.trim().isEmpty == true ? 'Obrigatório' : null,
                       ),
                       const SizedBox(height: 12),
                       Row(
@@ -496,6 +500,9 @@ class _ProjectDialogState extends State<ProjectDialog> {
                               controller: _cityCtrl,
                               hint: 'Cidade',
                               icon: CupertinoIcons.map,
+                              textCapitalization: TextCapitalization.words,
+                              textInputAction: TextInputAction.next,
+                              validator: (v) => v?.trim().isEmpty == true ? 'Obrigatório' : null,
                             ),
                           ),
                           const SizedBox(width: 8),
@@ -505,6 +512,12 @@ class _ProjectDialogState extends State<ProjectDialog> {
                               controller: _stateCtrl,
                               hint: 'UF',
                               icon: CupertinoIcons.map_pin_ellipse,
+                              textCapitalization: TextCapitalization.characters,
+                              textInputAction: TextInputAction.next,
+                              inputFormatters: [
+                                LengthLimitingTextInputFormatter(2),
+                              ],
+                              validator: (v) => (v?.length ?? 0) < 2 ? 'UF' : null,
                             ),
                           ),
                         ],
@@ -514,6 +527,8 @@ class _ProjectDialogState extends State<ProjectDialog> {
                         controller: _descCtrl,
                         hint: 'Descrição',
                         icon: CupertinoIcons.text_alignleft,
+                        textCapitalization: TextCapitalization.sentences,
+                        textInputAction: TextInputAction.next,
                       ),
                       const SizedBox(height: 12),
                       _DialogTextField(
@@ -521,6 +536,8 @@ class _ProjectDialogState extends State<ProjectDialog> {
                         hint: 'Observações',
                         icon: CupertinoIcons.exclamationmark_circle,
                         maxLines: 2,
+                        textCapitalization: TextCapitalization.sentences,
+                        textInputAction: TextInputAction.done,
                       ),
                       const SizedBox(height: 16),
                       CupertinoSlidingSegmentedControl<String>(
@@ -530,36 +547,21 @@ class _ProjectDialogState extends State<ProjectDialog> {
                         children: const {
                           'ongoing': Padding(
                             padding: EdgeInsets.symmetric(horizontal: 4),
-                            child: Text(
-                              'Andamento',
-                              style: TextStyle(
-                                color: Colors.white,
-                                fontSize: 10,
-                              ),
-                            ),
+                            child: Text('Andamento', style: TextStyle(color: Colors.white, fontSize: 10)),
                           ),
                           'incoming': Padding(
                             padding: EdgeInsets.symmetric(horizontal: 4),
-                            child: Text(
-                              'Futuro',
-                              style: TextStyle(
-                                color: Colors.white,
-                                fontSize: 10,
-                              ),
-                            ),
+                            child: Text('Futuro', style: TextStyle(color: Colors.white, fontSize: 10)),
                           ),
                           'finished': Padding(
                             padding: EdgeInsets.symmetric(horizontal: 4),
-                            child: Text(
-                              'Final',
-                              style: TextStyle(
-                                color: Colors.white,
-                                fontSize: 10,
-                              ),
-                            ),
+                            child: Text('Final', style: TextStyle(color: Colors.white, fontSize: 10)),
                           ),
                         },
-                        onValueChanged: (v) => setState(() => _status = v!),
+                        onValueChanged: (v) {
+                          HapticFeedback.selectionClick();
+                          setState(() => _status = v!);
+                        },
                       ),
                       const SizedBox(height: 16),
                       Row(
@@ -624,12 +626,20 @@ class _DialogTextField extends StatelessWidget {
   final String hint;
   final IconData icon;
   final int maxLines;
+  final TextInputAction? textInputAction;
+  final TextCapitalization textCapitalization;
+  final List<TextInputFormatter>? inputFormatters;
+  final String? Function(String?)? validator;
 
   const _DialogTextField({
     required this.controller,
     required this.hint,
     required this.icon,
     this.maxLines = 1,
+    this.textInputAction,
+    this.textCapitalization = TextCapitalization.none,
+    this.inputFormatters,
+    this.validator,
   });
 
   static final _fieldBg = Colors.white.withValues(alpha: 0.05);
@@ -644,10 +654,15 @@ class _DialogTextField extends StatelessWidget {
         borderRadius: BorderRadius.circular(12),
         border: Border.all(color: _borderColor),
       ),
-      child: TextField(
+      child: TextFormField(
         controller: controller,
         maxLines: maxLines,
+        textInputAction: textInputAction,
+        textCapitalization: textCapitalization,
+        inputFormatters: inputFormatters,
+        validator: validator,
         style: const TextStyle(color: Colors.white),
+        cursorColor: Colors.redAccent,
         decoration: InputDecoration(
           prefixIcon: Icon(icon, color: Colors.white54, size: 20),
           hintText: hint,
@@ -657,6 +672,7 @@ class _DialogTextField extends StatelessWidget {
             horizontal: 16,
             vertical: 14,
           ),
+          errorStyle: const TextStyle(height: 0, color: Colors.transparent),
         ),
       ),
     );

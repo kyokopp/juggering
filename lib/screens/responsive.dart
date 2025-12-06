@@ -13,3 +13,5 @@ class ResponsiveContainer extends StatelessWidget {
   }
 }
 
+//esse arquivo serve basicamente pra melhorar a compatibilidade em diferentes telas
+

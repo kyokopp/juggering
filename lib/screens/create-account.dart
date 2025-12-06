@@ -1,6 +1,7 @@
 import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:flutter/cupertino.dart';
+import 'package:flutter/services.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'responsive.dart';
@@ -15,6 +16,7 @@ class CreateAccountScreen extends StatefulWidget {
 class _CreateAccountScreenState extends State<CreateAccountScreen>
     with SingleTickerProviderStateMixin {
   final _formKey = GlobalKey<FormState>();
+
   final _nameController = TextEditingController();
   final _emailController = TextEditingController();
   final _phoneController = TextEditingController();
@@ -30,23 +32,14 @@ class _CreateAccountScreenState extends State<CreateAccountScreen>
   bool _isLoading = false;
   bool _showPassword = false;
   bool _showConfirmPassword = false;
-  int _passwordStrength = 0;
 
   late AnimationController _fadeController;
   late Animation<double> _fadeAnimation;
   late Animation<Offset> _slideAnimation;
 
-  static final _cardBg = const Color(0xFF1C1C1E).withValues(alpha: 0.6);
-  static final _borderColor = Colors.white.withValues(alpha: 0.1);
-  static final _fieldBg = Colors.black.withValues(alpha: 0.3);
-  static final _hintColor = Colors.white.withValues(alpha: 0.4);
-  static final _shadowColor = const Color(0xFFD32F2F).withValues(alpha: 0.4);
-
   @override
   void initState() {
     super.initState();
-    _enableHighRefreshRate();
-
     _fadeController = AnimationController(
       duration: const Duration(milliseconds: 600),
       vsync: this,
@@ -66,41 +59,6 @@ class _CreateAccountScreenState extends State<CreateAccountScreen>
     ));
 
     _fadeController.forward();
-
-    _passwordController.addListener(_updatePasswordStrength);
-  }
-
-  void _enableHighRefreshRate() {
-    WidgetsBinding.instance.addPostFrameCallback((_) {});
-  }
-
-  void _updatePasswordStrength() {
-    final newStrength = _calculatePasswordStrength(_passwordController.text);
-    if (newStrength != _passwordStrength) {
-      setState(() => _passwordStrength = newStrength);
-    }
-  }
-
-  int _calculatePasswordStrength(String password) {
-    if (password.isEmpty) return 0;
-    if (password.length < 6) return 1;
-    if (password.length < 10) return 2;
-    return 3;
-  }
-
-  Color _getStrengthColor(int strength) {
-    switch (strength) {
-      case 0:
-        return Colors.transparent;
-      case 1:
-        return const Color(0xFFFF453A);
-      case 2:
-        return const Color(0xFFFF9F0A);
-      case 3:
-        return const Color(0xFF32D74B);
-      default:
-        return Colors.transparent;
-    }
   }
 
   @override
@@ -119,34 +77,38 @@ class _CreateAccountScreenState extends State<CreateAccountScreen>
     super.dispose();
   }
 
-  void _handleSignUp() async {
+  Future<void> _handleSignUp() async {
     FocusScope.of(context).unfocus();
 
     if (_formKey.currentState!.validate()) {
       setState(() => _isLoading = true);
+      HapticFeedback.mediumImpact();
+
+      UserCredential? userCredential;
+
       try {
-        // 1. Create Auth User
-        UserCredential userCredential =
-        await FirebaseAuth.instance.createUserWithEmailAndPassword(
+        userCredential = await FirebaseAuth.instance.createUserWithEmailAndPassword(
           email: _emailController.text.trim(),
           password: _passwordController.text.trim(),
         );
 
         if (userCredential.user != null) {
-          // 2. Update Display Name
-          await userCredential.user!
-              .updateDisplayName(_nameController.text.trim());
+          await userCredential.user!.updateDisplayName(_nameController.text.trim());
 
-          // 3. Create Firestore Document with Phone & Default Role
-          await FirebaseFirestore.instance
-              .collection('users')
-              .doc(userCredential.user!.uid)
-              .set({
-            'phone': _phoneController.text.trim(),
-            'role': 'Usuário', // Default role
-            'email': _emailController.text.trim(),
-            'createdAt': FieldValue.serverTimestamp(),
-          });
+          try {
+            await FirebaseFirestore.instance
+                .collection('users')
+                .doc(userCredential.user!.uid)
+                .set({
+              'phone': _phoneController.text.trim(),
+              'role': 'Usuário',
+              'email': _emailController.text.trim(),
+              'createdAt': FieldValue.serverTimestamp(),
+            });
+          } catch (firestoreError) {
+            await userCredential.user!.delete();
+            throw Exception("Erro ao salvar dados. Tente novamente.");
+          }
         }
 
         if (mounted) {
@@ -157,24 +119,44 @@ class _CreateAccountScreenState extends State<CreateAccountScreen>
                 'Conta criada com sucesso!',
                 style: TextStyle(fontFamily: '.SF Pro Text'),
               ),
-              backgroundColor: Colors.green,
+              backgroundColor: Color(0xFF32D74B),
               duration: Duration(seconds: 2),
             ),
           );
         }
       } on FirebaseAuthException catch (e) {
+        String message = 'Erro ao criar conta';
+        if (e.code == 'email-already-in-use') {
+          message = 'Este e-mail já está em uso.';
+        } else if (e.code == 'weak-password') {
+          message = 'A senha é muito fraca.';
+        } else if (e.message != null) {
+          message = e.message!;
+        }
+
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
-              content: Text(e.message ?? 'Erro ao criar conta'),
-              backgroundColor: Colors.redAccent,
-              duration: const Duration(seconds: 3),
+              content: Text(message),
+              backgroundColor: const Color(0xFFFF453A),
+              behavior: SnackBarBehavior.floating,
+            ),
+          );
+        }
+      } catch (e) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(e.toString().replaceAll("Exception: ", "")),
+              backgroundColor: const Color(0xFFFF453A),
             ),
           );
         }
       } finally {
         if (mounted) setState(() => _isLoading = false);
       }
+    } else {
+      HapticFeedback.heavyImpact();
     }
   }
 
@@ -201,47 +183,52 @@ class _CreateAccountScreenState extends State<CreateAccountScreen>
           ),
           border: Border.all(color: Colors.transparent),
         ),
-        body: _BackgroundGradient(
-          child: Center(
-            child: SingleChildScrollView(
-              padding: const EdgeInsets.symmetric(
-                horizontal: 24.0,
-                vertical: 20,
-              ),
-              keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
-              child: ResponsiveContainer(
-                child: SlideTransition(
-                  position: _slideAnimation,
-                  child: FadeTransition(
-                    opacity: _fadeAnimation,
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.stretch,
-                      children: [
-                        const SizedBox(height: 80),
-                        _SignUpForm(
-                          formKey: _formKey,
-                          nameController: _nameController,
-                          emailController: _emailController,
-                          phoneController: _phoneController, // Pass controller
-                          passwordController: _passwordController,
-                          confirmPasswordController: _confirmPasswordController,
-                          nameFocusNode: _nameFocusNode,
-                          emailFocusNode: _emailFocusNode,
-                          phoneFocusNode: _phoneFocusNode, // Pass focus node
-                          passwordFocusNode: _passwordFocusNode,
-                          confirmPasswordFocusNode: _confirmPasswordFocusNode,
-                          showPassword: _showPassword,
-                          showConfirmPassword: _showConfirmPassword,
-                          passwordStrength: _passwordStrength,
-                          isLoading: _isLoading,
-                          onTogglePassword: () =>
-                              setState(() => _showPassword = !_showPassword),
-                          onToggleConfirmPassword: () => setState(
-                                  () => _showConfirmPassword = !_showConfirmPassword),
-                          onSignUp: _handleSignUp,
-                          getStrengthColor: _getStrengthColor,
-                        ),
-                      ],
+        body: AnnotatedRegion<SystemUiOverlayStyle>(
+          value: SystemUiOverlayStyle.light,
+          child: _BackgroundGradient(
+            child: Center(
+              child: SingleChildScrollView(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 24.0,
+                  vertical: 20,
+                ),
+                keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
+                child: ResponsiveContainer(
+                  child: SlideTransition(
+                    position: _slideAnimation,
+                    child: FadeTransition(
+                      opacity: _fadeAnimation,
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          const SizedBox(height: 80),
+                          _SignUpForm(
+                            formKey: _formKey,
+                            nameController: _nameController,
+                            emailController: _emailController,
+                            phoneController: _phoneController,
+                            passwordController: _passwordController,
+                            confirmPasswordController: _confirmPasswordController,
+                            nameFocusNode: _nameFocusNode,
+                            emailFocusNode: _emailFocusNode,
+                            phoneFocusNode: _phoneFocusNode,
+                            passwordFocusNode: _passwordFocusNode,
+                            confirmPasswordFocusNode: _confirmPasswordFocusNode,
+                            showPassword: _showPassword,
+                            showConfirmPassword: _showConfirmPassword,
+                            isLoading: _isLoading,
+                            onTogglePassword: () {
+                              HapticFeedback.lightImpact();
+                              setState(() => _showPassword = !_showPassword);
+                            },
+                            onToggleConfirmPassword: () {
+                              HapticFeedback.lightImpact();
+                              setState(() => _showConfirmPassword = !_showConfirmPassword);
+                            },
+                            onSignUp: _handleSignUp,
+                          ),
+                        ],
+                      ),
                     ),
                   ),
                 ),
@@ -293,15 +280,11 @@ class _SignUpForm extends StatelessWidget {
   final FocusNode confirmPasswordFocusNode;
   final bool showPassword;
   final bool showConfirmPassword;
-  final int passwordStrength;
   final bool isLoading;
   final VoidCallback onTogglePassword;
   final VoidCallback onToggleConfirmPassword;
   final VoidCallback onSignUp;
-  final Color Function(int) getStrengthColor;
 
-
-  //the user needs to sign all this fields, i prob gonna add some more later
   const _SignUpForm({
     required this.formKey,
     required this.nameController,
@@ -316,12 +299,10 @@ class _SignUpForm extends StatelessWidget {
     required this.confirmPasswordFocusNode,
     required this.showPassword,
     required this.showConfirmPassword,
-    required this.passwordStrength,
     required this.isLoading,
     required this.onTogglePassword,
     required this.onToggleConfirmPassword,
     required this.onSignUp,
-    required this.getStrengthColor,
   });
 
   static final _cardBg = const Color(0xFF1C1C1E).withValues(alpha: 0.6);
@@ -369,21 +350,21 @@ class _SignUpForm extends StatelessWidget {
                 ),
                 const SizedBox(height: 24),
 
-                // Name Field
                 _CustomTextField(
                   controller: nameController,
                   focusNode: nameFocusNode,
                   placeholder: 'Nome Completo',
                   icon: CupertinoIcons.person_fill,
                   keyboardType: TextInputType.name,
+                  textCapitalization: TextCapitalization.words,
                   textInputAction: TextInputAction.next,
+                  autofillHints: const [AutofillHints.name],
                   validator: (value) =>
                   value!.isEmpty ? 'Por favor, insira seu nome' : null,
                   onFieldSubmitted: (_) => emailFocusNode.requestFocus(),
                 ),
                 const SizedBox(height: 18),
 
-                // Email Field
                 _CustomTextField(
                   controller: emailController,
                   focusNode: emailFocusNode,
@@ -391,6 +372,7 @@ class _SignUpForm extends StatelessWidget {
                   icon: CupertinoIcons.mail_solid,
                   keyboardType: TextInputType.emailAddress,
                   textInputAction: TextInputAction.next,
+                  autofillHints: const [AutofillHints.email],
                   validator: (value) {
                     if (value == null || !value.contains('@')) {
                       return 'E-mail inválido';
@@ -401,7 +383,6 @@ class _SignUpForm extends StatelessWidget {
                 ),
                 const SizedBox(height: 18),
 
-                // Phone Field (Added)
                 _CustomTextField(
                   controller: phoneController,
                   focusNode: phoneFocusNode,
@@ -409,19 +390,20 @@ class _SignUpForm extends StatelessWidget {
                   icon: CupertinoIcons.phone_fill,
                   keyboardType: TextInputType.phone,
                   textInputAction: TextInputAction.next,
+                  autofillHints: const [AutofillHints.telephoneNumber],
                   validator: (value) =>
                   value!.isEmpty ? 'Por favor, insira seu telefone' : null,
                   onFieldSubmitted: (_) => passwordFocusNode.requestFocus(),
                 ),
                 const SizedBox(height: 18),
 
-                // Password Field
                 _PasswordTextField(
                   controller: passwordController,
                   focusNode: passwordFocusNode,
                   placeholder: 'Senha',
                   showPassword: showPassword,
                   textInputAction: TextInputAction.next,
+                  autofillHints: const [AutofillHints.newPassword],
                   onToggle: onTogglePassword,
                   validator: (value) {
                     if (value == null || value.length < 6) {
@@ -432,21 +414,25 @@ class _SignUpForm extends StatelessWidget {
                   onFieldSubmitted: (_) => confirmPasswordFocusNode.requestFocus(),
                 ),
 
-                if (passwordController.text.isNotEmpty)
-                  _PasswordStrengthIndicator(
-                    strength: passwordStrength,
-                    getStrengthColor: getStrengthColor,
-                  ),
+                ValueListenableBuilder<TextEditingValue>(
+                  valueListenable: passwordController,
+                  builder: (context, value, child) {
+                    if (value.text.isNotEmpty) {
+                      return _PasswordStrengthIndicator(password: value.text);
+                    }
+                    return const SizedBox.shrink();
+                  },
+                ),
 
                 const SizedBox(height: 18),
 
-                // Confirm Password Field
                 _PasswordTextField(
                   controller: confirmPasswordController,
                   focusNode: confirmPasswordFocusNode,
                   placeholder: 'Confirmar Senha',
                   showPassword: showConfirmPassword,
                   textInputAction: TextInputAction.done,
+                  autofillHints: const [AutofillHints.newPassword],
                   onToggle: onToggleConfirmPassword,
                   validator: (value) {
                     if (value != passwordController.text) {
@@ -479,6 +465,8 @@ class _CustomTextField extends StatelessWidget {
   final IconData icon;
   final TextInputType keyboardType;
   final TextInputAction textInputAction;
+  final TextCapitalization textCapitalization;
+  final Iterable<String>? autofillHints;
   final String? Function(String?)? validator;
   final Function(String)? onFieldSubmitted;
 
@@ -489,6 +477,8 @@ class _CustomTextField extends StatelessWidget {
     required this.icon,
     this.keyboardType = TextInputType.text,
     this.textInputAction = TextInputAction.next,
+    this.textCapitalization = TextCapitalization.none,
+    this.autofillHints,
     this.validator,
     this.onFieldSubmitted,
   });
@@ -509,6 +499,8 @@ class _CustomTextField extends StatelessWidget {
       focusNode: focusNode,
       keyboardType: keyboardType,
       textInputAction: textInputAction,
+      textCapitalization: textCapitalization,
+      autofillHints: autofillHints,
       validator: validator,
       onFieldSubmitted: onFieldSubmitted,
       style: iosFont.copyWith(fontSize: 15),
@@ -558,6 +550,7 @@ class _PasswordTextField extends StatelessWidget {
   final String placeholder;
   final bool showPassword;
   final TextInputAction textInputAction;
+  final Iterable<String>? autofillHints;
   final VoidCallback onToggle;
   final String? Function(String?)? validator;
   final Function(String)? onFieldSubmitted;
@@ -569,6 +562,7 @@ class _PasswordTextField extends StatelessWidget {
     required this.showPassword,
     required this.textInputAction,
     required this.onToggle,
+    this.autofillHints,
     this.validator,
     this.onFieldSubmitted,
   });
@@ -589,6 +583,7 @@ class _PasswordTextField extends StatelessWidget {
       focusNode: focusNode,
       obscureText: !showPassword,
       textInputAction: textInputAction,
+      autofillHints: autofillHints,
       validator: validator,
       onFieldSubmitted: onFieldSubmitted,
       style: iosFont.copyWith(fontSize: 15),
@@ -651,13 +646,26 @@ class _PasswordTextField extends StatelessWidget {
 }
 
 class _PasswordStrengthIndicator extends StatelessWidget {
-  final int strength;
-  final Color Function(int) getStrengthColor;
+  final String password;
 
-  const _PasswordStrengthIndicator({
-    required this.strength,
-    required this.getStrengthColor,
-  });
+  const _PasswordStrengthIndicator({required this.password});
+
+  int _calculateStrength(String password) {
+    if (password.isEmpty) return 0;
+    if (password.length < 6) return 1;
+    if (password.length < 10) return 2;
+    return 3;
+  }
+
+  Color _getStrengthColor(int strength) {
+    switch (strength) {
+      case 0: return Colors.transparent;
+      case 1: return const Color(0xFFFF453A);
+      case 2: return const Color(0xFFFF9F0A);
+      case 3: return const Color(0xFF32D74B);
+      default: return Colors.transparent;
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -666,6 +674,8 @@ class _PasswordStrengthIndicator extends StatelessWidget {
       color: Colors.white,
     );
 
+    final strength = _calculateStrength(password);
+
     return Padding(
       padding: const EdgeInsets.only(top: 8, left: 4, right: 4),
       child: Row(
@@ -673,13 +683,20 @@ class _PasswordStrengthIndicator extends StatelessWidget {
           Expanded(
             child: ClipRRect(
               borderRadius: BorderRadius.circular(2),
-              child: LinearProgressIndicator(
-                value: strength / 3,
-                backgroundColor: Colors.white12,
-                valueColor: AlwaysStoppedAnimation<Color>(
-                  getStrengthColor(strength),
-                ),
-                minHeight: 4,
+              child: TweenAnimationBuilder<double>(
+                duration: const Duration(milliseconds: 300),
+                curve: Curves.easeOut,
+                tween: Tween<double>(begin: 0, end: strength / 3),
+                builder: (context, value, _) {
+                  return LinearProgressIndicator(
+                    value: value,
+                    backgroundColor: Colors.white12,
+                    valueColor: AlwaysStoppedAnimation<Color>(
+                      _getStrengthColor(strength),
+                    ),
+                    minHeight: 4,
+                  );
+                },
               ),
             ),
           ),
@@ -715,12 +732,15 @@ class _SignUpButton extends StatelessWidget {
     return CupertinoButton(
       padding: EdgeInsets.zero,
       onPressed: isLoading ? null : onPressed,
-      child: Container(
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 200),
         width: double.infinity,
         padding: const EdgeInsets.symmetric(vertical: 16),
         decoration: BoxDecoration(
-          gradient: const LinearGradient(
-            colors: [Color(0xFFD32F2F), Color(0xFFB71C1C)],
+          gradient: LinearGradient(
+            colors: isLoading
+                ? [const Color(0xFFB71C1C), const Color(0xFFB71C1C)]
+                : [const Color(0xFFD32F2F), const Color(0xFFB71C1C)],
           ),
           borderRadius: BorderRadius.circular(12),
           boxShadow: [

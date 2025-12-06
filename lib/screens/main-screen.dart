@@ -1,6 +1,7 @@
 import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:flutter/cupertino.dart';
+import 'package:flutter/services.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:intl/intl.dart';
 import 'contacts_screen.dart';
@@ -25,14 +26,13 @@ class MainScreen extends StatefulWidget {
 class _MainScreenState extends State<MainScreen> {
   bool _isSidebarOpen = false;
 
-
   late final ContactService _contactService;
   late final ProjectService _projectService;
   late final EventService _eventService;
 
   late final Stream<List<Contact>> _favoritesStream;
   late final Stream<List<Project>> _dashboardProjectsStream;
-  late final Stream<List<Event>> _upcomingEventsStream; // NEW
+  late final Stream<List<Event>> _upcomingEventsStream;
 
   String? _cachedFirstName;
 
@@ -41,11 +41,11 @@ class _MainScreenState extends State<MainScreen> {
     super.initState();
     _contactService = ContactService();
     _projectService = ProjectService();
-    _eventService = EventService(); // Init
+    _eventService = EventService();
 
     _favoritesStream = _contactService.getFavoriteContacts();
     _dashboardProjectsStream = _projectService.getDashboardProjects();
-    _upcomingEventsStream = _eventService.getUpcomingEvents(); // Init
+    _upcomingEventsStream = _eventService.getUpcomingEvents();
 
     _cacheUserName();
   }
@@ -56,55 +56,78 @@ class _MainScreenState extends State<MainScreen> {
   }
 
   void _toggleSidebar() {
+    HapticFeedback.selectionClick();
     setState(() {
       _isSidebarOpen = !_isSidebarOpen;
     });
   }
 
-  void _handleLogout(BuildContext context) async {
-    await FirebaseAuth.instance.signOut();
+  Future<void> _handleLogout(BuildContext context) async {
+    HapticFeedback.mediumImpact();
+    try {
+      await FirebaseAuth.instance.signOut();
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Erro ao sair: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
   }
-
   @override
   Widget build(BuildContext context) {
     final screenSize = MediaQuery.of(context).size;
     final sidebarWidth = screenSize.width * 0.7;
 
-    return Scaffold(
-      body: Stack(
-        children: [
-          _MainContent(
-            cachedFirstName: _cachedFirstName ?? 'Polaris',
-            onMenuTap: _toggleSidebar,
-            favoritesStream: _favoritesStream,
-            projectsStream: _dashboardProjectsStream,
-            eventsStream: _upcomingEventsStream, // Pass down
-          ),
+    return PopScope(
+      canPop: !_isSidebarOpen,
+      onPopInvokedWithResult: (didPop, result) {
+        if (didPop) return;
+        _toggleSidebar();
+      },
+      child: Scaffold(
+        body: AnnotatedRegion<SystemUiOverlayStyle>(
+          value: SystemUiOverlayStyle.light,
+          child: Stack(
+            children: [
+              _MainContent(
+                cachedFirstName: _cachedFirstName ?? 'Polaris',
+                onMenuTap: _toggleSidebar,
+                favoritesStream: _favoritesStream,
+                projectsStream: _dashboardProjectsStream,
+                eventsStream: _upcomingEventsStream,
+              ),
 
-          // Sidebar Dim Effect
-          if (_isSidebarOpen)
-            GestureDetector(
-              onTap: _toggleSidebar,
-              child: AnimatedOpacity(
-                duration: const Duration(milliseconds: 300),
-                opacity: _isSidebarOpen ? 1.0 : 0.0,
-                child: Container(
-                  color: Colors.black.withValues(alpha: 0.5),
+              IgnorePointer(
+                ignoring: !_isSidebarOpen,
+                child: GestureDetector(
+                  onTap: _toggleSidebar,
+                  child: AnimatedOpacity(
+                    duration: const Duration(milliseconds: 300),
+                    opacity: _isSidebarOpen ? 1.0 : 0.0,
+                    child: Container(
+                      color: Colors.black.withValues(alpha: 0.5),
+                    ),
+                  ),
                 ),
               ),
-            ),
 
-          _AnimatedSidebar(
-            isOpen: _isSidebarOpen,
-            width: sidebarWidth,
-            screenWidth: screenSize.width,
-            onClose: _toggleSidebar,
-            onLogout: () {
-              _toggleSidebar();
-              _handleLogout(context);
-            },
+              _AnimatedSidebar(
+                isOpen: _isSidebarOpen,
+                width: sidebarWidth,
+                screenWidth: screenSize.width,
+                onClose: _toggleSidebar,
+                onLogout: () {
+                  _toggleSidebar();
+                  _handleLogout(context);
+                },
+              ),
+            ],
           ),
-        ],
+        ),
       ),
     );
   }
@@ -140,7 +163,6 @@ class _MainContent extends StatelessWidget {
       child: SafeArea(
         child: Column(
           children: [
-            // Top Container
             ClipRRect(
               borderRadius: const BorderRadius.only(
                 bottomLeft: Radius.circular(20),
@@ -161,6 +183,7 @@ class _MainContent extends StatelessWidget {
                     children: [
                       GestureDetector(
                         onTap: () {
+                          HapticFeedback.lightImpact();
                           Navigator.of(context).push(
                             CupertinoPageRoute(builder: (context) => const ProfileScreen()),
                           );
@@ -178,6 +201,7 @@ class _MainContent extends StatelessWidget {
                                   image: const DecorationImage(
                                     image: AssetImage('assets/images/user.png'),
                                     fit: BoxFit.cover,
+                                    filterQuality: FilterQuality.high,
                                   ),
                                 ),
                               ),
@@ -220,22 +244,17 @@ class _MainContent extends StatelessWidget {
             Expanded(
               child: SingleChildScrollView(
                 padding: const EdgeInsets.all(16.0),
+                physics: const BouncingScrollPhysics(),
                 child: ResponsiveContainer(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
-                      // Favorites Section
                       _FavoritesSection(favoritesStream: favoritesStream),
-
                       const SizedBox(height: 16),
-
-                      // Ongoing Projects Card
                       _ProjectsDashboardCard(projectsStream: projectsStream),
-
                       const SizedBox(height: 16),
-
-                      // NEW: Replaced Notifications with Upcoming Events
                       _UpcomingEventsCard(eventsStream: eventsStream),
+                      const SizedBox(height: 20),
                     ],
                   ),
                 ),
@@ -248,16 +267,16 @@ class _MainContent extends StatelessWidget {
   }
 }
 
-// NEW WIDGET: Upcoming Events Card
 class _UpcomingEventsCard extends StatelessWidget {
   final Stream<List<Event>> eventsStream;
   const _UpcomingEventsCard({required this.eventsStream});
 
+  static final _dayFormat = DateFormat('dd');
+  static final _monthFormat = DateFormat('MMM');
+
   @override
   Widget build(BuildContext context) {
     const iosFont = TextStyle(fontFamily: '.SF Pro Text', color: Colors.white);
-    final dayFormat = DateFormat('dd');
-    final monthFormat = DateFormat('MMM');
 
     return Container(
       padding: const EdgeInsets.all(20),
@@ -283,6 +302,7 @@ class _UpcomingEventsCard extends StatelessWidget {
           StreamBuilder<List<Event>>(
             stream: eventsStream,
             builder: (context, snapshot) {
+              if (snapshot.hasError) return const Text('Erro ao carregar', style: TextStyle(color: Colors.red));
               if (snapshot.connectionState == ConnectionState.waiting) {
                 return const Center(child: CupertinoActivityIndicator(color: Colors.white));
               }
@@ -301,7 +321,6 @@ class _UpcomingEventsCard extends StatelessWidget {
                   ),
                   child: Row(
                     children: [
-                      // Date Box
                       Container(
                         padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
                         decoration: BoxDecoration(
@@ -311,8 +330,8 @@ class _UpcomingEventsCard extends StatelessWidget {
                         ),
                         child: Column(
                           children: [
-                            Text(dayFormat.format(event.date), style: iosFont.copyWith(fontSize: 16, fontWeight: FontWeight.bold)),
-                            Text(monthFormat.format(event.date).toUpperCase(), style: iosFont.copyWith(fontSize: 10, color: Colors.white70)),
+                            Text(_dayFormat.format(event.date), style: iosFont.copyWith(fontSize: 16, fontWeight: FontWeight.bold)),
+                            Text(_monthFormat.format(event.date).toUpperCase(), style: iosFont.copyWith(fontSize: 10, color: Colors.white70)),
                           ],
                         ),
                       ),
@@ -340,10 +359,11 @@ class _ProjectsDashboardCard extends StatelessWidget {
   final Stream<List<Project>> projectsStream;
   const _ProjectsDashboardCard({required this.projectsStream});
 
+  static final _dateFormat = DateFormat('dd/MM');
+
   @override
   Widget build(BuildContext context) {
     const iosFont = TextStyle(fontFamily: '.SF Pro Text', color: Colors.white);
-    final dateFormat = DateFormat('dd/MM');
 
     return Container(
       padding: const EdgeInsets.all(20),
@@ -366,6 +386,7 @@ class _ProjectsDashboardCard extends StatelessWidget {
           StreamBuilder<List<Project>>(
             stream: projectsStream,
             builder: (context, snapshot) {
+              if (snapshot.hasError) return const Text('Erro ao carregar', style: TextStyle(color: Colors.red));
               if (snapshot.connectionState == ConnectionState.waiting) return const Center(child: CupertinoActivityIndicator(color: Colors.white));
               if (!snapshot.hasData || snapshot.data!.isEmpty) {
                 return Text('Nenhum projeto em andamento.', style: iosFont.copyWith(color: Colors.white38));
@@ -398,7 +419,7 @@ class _ProjectsDashboardCard extends StatelessWidget {
                         crossAxisAlignment: CrossAxisAlignment.end,
                         children: [
                           Text('Fim', style: iosFont.copyWith(fontSize: 10, color: Colors.white38)),
-                          Text(dateFormat.format(project.endDate), style: iosFont.copyWith(fontSize: 12, color: Colors.blueAccent, fontWeight: FontWeight.w600)),
+                          Text(_dateFormat.format(project.endDate), style: iosFont.copyWith(fontSize: 12, color: Colors.blueAccent, fontWeight: FontWeight.w600)),
                         ],
                       ),
                     ],
@@ -457,6 +478,7 @@ class _FavoritesSection extends StatelessWidget {
                   child: StreamBuilder<List<Contact>>(
                     stream: favoritesStream,
                     builder: (context, snapshot) {
+                      if (snapshot.hasError) return const Center(child: Icon(Icons.error_outline, color: Colors.white38));
                       if (snapshot.connectionState == ConnectionState.waiting) {
                         return const Center(
                           child: CupertinoActivityIndicator(color: Colors.white),
@@ -502,35 +524,38 @@ class _FavoriteContactCard extends StatelessWidget {
   Widget build(BuildContext context) {
     const iosFont = TextStyle(fontFamily: '.SF Pro Text', color: Colors.white);
 
-    return Container(
-      margin: const EdgeInsets.only(bottom: 8),
-      padding: const EdgeInsets.all(10),
-      decoration: BoxDecoration(
-        color: Colors.black.withValues(alpha: 0.26),
-        borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: Colors.white.withValues(alpha: 0.1)),
-      ),
-      child: Row(
-        children: [
-          const CircleAvatar(
-            radius: 16,
-            backgroundColor: Colors.white12,
-            child: Icon(Icons.person, color: Colors.white70, size: 16),
-          ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Text(
-              contact.name,
-              style: iosFont.copyWith(fontSize: 16, fontWeight: FontWeight.w500),
-              overflow: TextOverflow.ellipsis,
+    return GestureDetector(
+      onTap: () => HapticFeedback.selectionClick(),
+      child: Container(
+        margin: const EdgeInsets.only(bottom: 8),
+        padding: const EdgeInsets.all(10),
+        decoration: BoxDecoration(
+          color: Colors.black.withValues(alpha: 0.26),
+          borderRadius: BorderRadius.circular(10),
+          border: Border.all(color: Colors.white.withValues(alpha: 0.1)),
+        ),
+        child: Row(
+          children: [
+            const CircleAvatar(
+              radius: 16,
+              backgroundColor: Colors.white12,
+              child: Icon(Icons.person, color: Colors.white70, size: 16),
             ),
-          ),
-          if (contact.role.isNotEmpty)
-            Text(
-              contact.role,
-              style: iosFont.copyWith(color: Colors.white54, fontSize: 12),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Text(
+                contact.name,
+                style: iosFont.copyWith(fontSize: 16, fontWeight: FontWeight.w500),
+                overflow: TextOverflow.ellipsis,
+              ),
             ),
-        ],
+            if (contact.role.isNotEmpty)
+              Text(
+                contact.role,
+                style: iosFont.copyWith(color: Colors.white54, fontSize: 12),
+              ),
+          ],
+        ),
       ),
     );
   }
@@ -557,7 +582,7 @@ class _AnimatedSidebar extends StatelessWidget {
 
     return AnimatedPositioned(
       duration: const Duration(milliseconds: 300),
-      curve: Curves.easeInOut,
+      curve: Curves.easeOutCubic,
       left: isOpen ? screenWidth - width : screenWidth,
       top: 0,
       bottom: 0,
@@ -600,6 +625,7 @@ class _AnimatedSidebar extends StatelessWidget {
                     icon: CupertinoIcons.person_2,
                     label: 'Contatos',
                     onTap: () {
+                      HapticFeedback.lightImpact();
                       onClose();
                       Navigator.of(context).push(
                         CupertinoPageRoute(builder: (context) => const ContactsScreen()),
@@ -610,17 +636,18 @@ class _AnimatedSidebar extends StatelessWidget {
                     icon: CupertinoIcons.briefcase,
                     label: 'Projetos',
                     onTap: () {
+                      HapticFeedback.lightImpact();
                       onClose();
                       Navigator.of(context).push(
                         CupertinoPageRoute(builder: (context) => const ProjectsScreen()),
                       );
                     },
                   ),
-                  //Eventos
                   _SidebarButton(
                     icon: CupertinoIcons.calendar,
                     label: 'Eventos',
                     onTap: () {
+                      HapticFeedback.lightImpact();
                       onClose();
                       Navigator.of(context).push(
                         CupertinoPageRoute(builder: (context) => const EventsScreen()),

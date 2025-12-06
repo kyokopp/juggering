@@ -1,6 +1,7 @@
 import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:flutter/cupertino.dart';
+import 'package:flutter/services.dart';
 import 'package:intl/intl.dart';
 import '../services/project_model.dart';
 import '../services/project_service.dart';
@@ -17,16 +18,13 @@ class ProjectDetailsScreen extends StatefulWidget {
 
 class _ProjectDetailsScreenState extends State<ProjectDetailsScreen>
     with SingleTickerProviderStateMixin {
-  // Reuse single instance
   late final ProjectService _projectService;
-  late final DateFormat _dateFormat;
+  static final DateFormat _dateFormat = DateFormat('dd/MM/yyyy');
 
-  // Cache computed values
   late final int _duration;
   late final Color _statusColor;
   late final String _statusLabel;
 
-  // Animation controller for smooth transitions
   late final AnimationController _animationController;
   late final Animation<double> _fadeAnimation;
   late final Animation<Offset> _slideAnimation;
@@ -34,76 +32,84 @@ class _ProjectDetailsScreenState extends State<ProjectDetailsScreen>
   @override
   void initState() {
     super.initState();
-
-    // Initialize services
     _projectService = ProjectService();
-    _dateFormat = DateFormat('dd/MM/yyyy');
 
-    // Cache computed values (calculated once)
     _duration = widget.project.endDate.difference(widget.project.startDate).inDays;
     _statusColor = _getStatusColor(widget.project.status);
     _statusLabel = _getStatusLabel(widget.project.status);
 
-    // Setup 120Hz-ready animations
     _animationController = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 350), // Smooth duration for 120Hz
+      duration: const Duration(milliseconds: 400),
     );
 
     _fadeAnimation = CurvedAnimation(
       parent: _animationController,
-      curve: Curves.easeOutCubic, // Smooth curve for high refresh rates
+      curve: Curves.easeOut,
     );
 
     _slideAnimation = Tween<Offset>(
-      begin: const Offset(0, 0.02),
+      begin: const Offset(0, 0.05),
       end: Offset.zero,
     ).animate(CurvedAnimation(
       parent: _animationController,
       curve: Curves.easeOutCubic,
     ));
 
-    // Start entrance animation
     _animationController.forward();
   }
 
   @override
   void dispose() {
     _animationController.dispose();
-    // Note: ProjectService disposal depends on your implementation
-    // If it has streams/listeners, dispose them here
     super.dispose();
   }
 
   Future<void> _handleDelete() async {
+    HapticFeedback.heavyImpact();
     final shouldDelete = await showCupertinoDialog<bool>(
       context: context,
       builder: (ctx) => CupertinoAlertDialog(
         title: const Text('Excluir Projeto'),
-        content: const Text('Tem certeza? Esta ação não pode ser desfeita.'),
+        content: const Text("Tem certeza? Esta ação não pode ser desfeita."),
         actions: [
           CupertinoDialogAction(
-            child: const Text('Cancelar'),
+            isDefaultAction: true,
             onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancelar'),
           ),
           CupertinoDialogAction(
             isDestructiveAction: true,
-            child: const Text('Excluir'),
             onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Excluir'),
           ),
         ],
       ),
     );
 
     if (shouldDelete == true && mounted) {
-      await _projectService.deleteProject(widget.project.id);
-      if (mounted) {
-        Navigator.pop(context, true); // Return true to indicate deletion
+      try {
+        await _projectService.deleteProject(widget.project.id);
+        if (mounted) {
+          HapticFeedback.mediumImpact();
+          Navigator.pop(context, true);
+        }
+      } catch (e) {
+        if (mounted) {
+          HapticFeedback.vibrate();
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Erro ao excluir: $e'),
+              backgroundColor: Colors.redAccent,
+            ),
+          );
+        }
       }
     }
   }
 
   Future<void> _handleEdit() async {
+    HapticFeedback.selectionClick();
     final result = await showDialog<bool>(
       context: context,
       barrierColor: Colors.black.withValues(alpha: 0.7),
@@ -121,126 +127,125 @@ class _ProjectDetailsScreenState extends State<ProjectDetailsScreen>
 
     return Scaffold(
       extendBodyBehindAppBar: true,
-      body: Stack(
-        children: [
-          // Background with subtle animation
-          AnimatedContainer(
-            duration: const Duration(milliseconds: 300),
-            decoration: const BoxDecoration(
-              gradient: LinearGradient(
-                begin: Alignment.topCenter,
-                end: Alignment.bottomCenter,
-                colors: [Color(0xFF8B0000), Color(0xFF110000)],
+      body: AnnotatedRegion<SystemUiOverlayStyle>(
+        value: SystemUiOverlayStyle.light,
+        child: Stack(
+          children: [
+            Container(
+              decoration: const BoxDecoration(
+                gradient: LinearGradient(
+                  begin: Alignment.topCenter,
+                  end: Alignment.bottomCenter,
+                  colors: [Color(0xFF8B0000), Color(0xFF110000)],
+                ),
               ),
             ),
-          ),
 
-          SafeArea(
-            child: Column(
-              children: [
-                // Header
-                Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                  child: Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      _buildHeaderButton(
-                        icon: CupertinoIcons.arrow_left,
-                        color: Colors.white.withValues(alpha:0.1),
-                        iconColor: Colors.white,
-                        onPressed: () => Navigator.pop(context),
-                      ),
-                      Text(
-                        'Detalhes do Projeto',
-                        style: textStyle.copyWith(
-                          fontSize: 17,
-                          fontWeight: FontWeight.w600,
+            SafeArea(
+              child: Column(
+                children: [
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        _buildHeaderButton(
+                          icon: CupertinoIcons.arrow_left,
+                          color: Colors.white.withValues(alpha: 0.1),
+                          iconColor: Colors.white,
+                          onPressed: () {
+                            HapticFeedback.lightImpact();
+                            Navigator.pop(context);
+                          },
                         ),
-                      ),
-                      _buildHeaderButton(
-                        icon: CupertinoIcons.pencil,
-                        color: Colors.blueAccent.withValues(alpha:0.2),
-                        iconColor: Colors.blueAccent,
-                        onPressed: _handleEdit,
-                      ),
-                    ],
+                        Text(
+                          'Detalhes do Projeto',
+                          style: textStyle.copyWith(
+                            fontSize: 17,
+                            fontWeight: FontWeight.w600,
+                            fontFamily: '.SF Pro Text',
+                          ),
+                        ),
+                        _buildHeaderButton(
+                          icon: CupertinoIcons.pencil,
+                          color: Colors.blueAccent.withValues(alpha: 0.2),
+                          iconColor: Colors.blueAccent,
+                          onPressed: _handleEdit,
+                        ),
+                      ],
+                    ),
                   ),
-                ),
 
-                // Content with smooth animations
-                Expanded(
-                  child: FadeTransition(
-                    opacity: _fadeAnimation,
-                    child: SlideTransition(
-                      position: _slideAnimation,
-                      child: SingleChildScrollView(
-                        physics: const BouncingScrollPhysics(),
-                        padding: const EdgeInsets.all(20),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            // Title & Status
-                            _buildTitleSection(textStyle),
-                            const SizedBox(height: 30),
+                  Expanded(
+                    child: FadeTransition(
+                      opacity: _fadeAnimation,
+                      child: SlideTransition(
+                        position: _slideAnimation,
+                        child: SingleChildScrollView(
+                          physics: const BouncingScrollPhysics(),
+                          padding: const EdgeInsets.all(20),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              _buildTitleSection(textStyle),
+                              const SizedBox(height: 30),
 
-                            // Location Card
-                            _buildGlassCard(
-                              icon: CupertinoIcons.location_solid,
-                              title: 'LOCALIZAÇÃO',
-                              content: '${widget.project.city} - ${widget.project.state}',
-                            ),
-                            const SizedBox(height: 16),
+                              _buildGlassCard(
+                                icon: CupertinoIcons.location_solid,
+                                title: 'LOCALIZAÇÃO',
+                                content: '${widget.project.city} - ${widget.project.state}',
+                              ),
+                              const SizedBox(height: 16),
 
-                            // Dates Card
-                            _buildGlassCard(
-                              icon: CupertinoIcons.calendar,
-                              title: 'CRONOGRAMA',
-                              content: '${_dateFormat.format(widget.project.startDate)} até ${_dateFormat.format(widget.project.endDate)}\n($_duration dias estimados)',
-                            ),
-                            const SizedBox(height: 16),
+                              _buildGlassCard(
+                                icon: CupertinoIcons.calendar,
+                                title: 'CRONOGRAMA',
+                                content: '${_dateFormat.format(widget.project.startDate)} até ${_dateFormat.format(widget.project.endDate)}\n($_duration dias estimados)',
+                              ),
+                              const SizedBox(height: 16),
 
-                            // Description
-                            _buildGlassCard(
-                              icon: CupertinoIcons.doc_text,
-                              title: 'DESCRIÇÃO',
-                              content: widget.project.description,
-                            ),
-                            const SizedBox(height: 16),
+                              _buildGlassCard(
+                                icon: CupertinoIcons.doc_text,
+                                title: 'DESCRIÇÃO',
+                                content: widget.project.description,
+                              ),
+                              const SizedBox(height: 16),
 
-                            // observações
-                            _buildGlassCard(
-                              icon: CupertinoIcons.exclamationmark_circle,
-                              title: 'OBSERVAÇÕES',
-                              content: widget.project.observations.isEmpty
-                                  ? 'Nenhuma observação.'
-                                  : widget.project.observations,
-                            ),
+                              _buildGlassCard(
+                                icon: CupertinoIcons.exclamationmark_circle,
+                                title: 'OBSERVAÇÕES',
+                                content: widget.project.observations.isEmpty
+                                    ? 'Nenhuma observação.'
+                                    : widget.project.observations,
+                              ),
 
-                            const SizedBox(height: 40),
+                              const SizedBox(height: 40),
 
-                            // delete
-                            Center(
-                              child: CupertinoButton(
-                                onPressed: _handleDelete,
-                                child: Text(
-                                  'Excluir Projeto',
-                                  style: textStyle.copyWith(
-                                    color: Colors.redAccent,
-                                    fontWeight: FontWeight.w600,
+                              Center(
+                                child: CupertinoButton(
+                                  onPressed: _handleDelete,
+                                  child: Text(
+                                    'Excluir Projeto',
+                                    style: textStyle.copyWith(
+                                      color: Colors.redAccent,
+                                      fontWeight: FontWeight.w600,
+                                      fontSize: 16,
+                                    ),
                                   ),
                                 ),
                               ),
-                            ),
-                          ],
+                              const SizedBox(height: 20),
+                            ],
+                          ),
                         ),
                       ),
                     ),
                   ),
-                ),
-              ],
+                ],
+              ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }
@@ -253,14 +258,16 @@ class _ProjectDetailsScreenState extends State<ProjectDetailsScreen>
   }) {
     return CupertinoButton(
       padding: EdgeInsets.zero,
-      onPressed: onPressed,
+      onPressed: onPressed, minimumSize: Size(0, 0),
       child: Container(
-        padding: const EdgeInsets.all(8),
+        width: 40,
+        height: 40,
+        alignment: Alignment.center,
         decoration: BoxDecoration(
           color: color,
           borderRadius: BorderRadius.circular(12),
         ),
-        child: Icon(icon, color: iconColor),
+        child: Icon(icon, color: iconColor, size: 20),
       ),
     );
   }
@@ -278,17 +285,19 @@ class _ProjectDetailsScreenState extends State<ProjectDetailsScreen>
               style: baseStyle.copyWith(
                 fontSize: 28,
                 fontWeight: FontWeight.bold,
+                fontFamily: '.SF Pro Display',
+                letterSpacing: 0.5,
               ),
             ),
           ),
         ),
-        const SizedBox(height: 10),
+        const SizedBox(height: 12),
         Container(
           padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
           decoration: BoxDecoration(
-            color: _statusColor.withValues(alpha:0.2),
+            color: _statusColor.withValues(alpha: 0.15),
             borderRadius: BorderRadius.circular(20),
-            border: Border.all(color: _statusColor),
+            border: Border.all(color: _statusColor.withValues(alpha: 0.5)),
           ),
           child: Text(
             _statusLabel,
@@ -296,6 +305,7 @@ class _ProjectDetailsScreenState extends State<ProjectDetailsScreen>
               color: _statusColor,
               fontSize: 12,
               fontWeight: FontWeight.bold,
+              letterSpacing: 1,
             ),
           ),
         ),
@@ -318,10 +328,10 @@ class _ProjectDetailsScreenState extends State<ProjectDetailsScreen>
           width: double.infinity,
           padding: const EdgeInsets.all(20),
           decoration: BoxDecoration(
-            color: Colors.white.withValues(alpha:0.05),
+            color: Colors.white.withValues(alpha: 0.05),
             borderRadius: BorderRadius.circular(20),
             border: Border.all(
-              color: Colors.white.withValues(alpha: .1),
+              color: Colors.white.withValues(alpha: 0.1),
             ),
           ),
           child: Column(
@@ -335,9 +345,10 @@ class _ProjectDetailsScreenState extends State<ProjectDetailsScreen>
                     title,
                     style: textStyle.copyWith(
                       color: Colors.white54,
-                      fontSize: 12,
+                      fontSize: 11,
                       fontWeight: FontWeight.bold,
-                      letterSpacing: 1,
+                      letterSpacing: 1.5,
+                      fontFamily: '.SF Pro Text',
                     ),
                   ),
                 ],
@@ -348,6 +359,8 @@ class _ProjectDetailsScreenState extends State<ProjectDetailsScreen>
                 style: textStyle.copyWith(
                   fontSize: 16,
                   height: 1.4,
+                  color: Colors.white.withValues(alpha: 0.9),
+                  fontFamily: '.SF Pro Text',
                 ),
               ),
             ],
@@ -357,21 +370,19 @@ class _ProjectDetailsScreenState extends State<ProjectDetailsScreen>
     );
   }
 
-  // Cached color calculation
   Color _getStatusColor(String status) {
     switch (status) {
       case 'ongoing':
-        return Colors.blueAccent;
+        return const Color(0xFF0A84FF);
       case 'incoming':
-        return Colors.orangeAccent;
+        return const Color(0xFFFF9F0A);
       case 'finished':
-        return Colors.greenAccent;
+        return const Color(0xFF32D74B);
       default:
         return Colors.white;
     }
   }
 
-  // Cached label calculation
   String _getStatusLabel(String status) {
     switch (status) {
       case 'ongoing':

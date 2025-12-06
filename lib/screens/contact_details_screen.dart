@@ -17,15 +17,12 @@ class _ContactDetailsScreenState extends State<ContactDetailsScreen>
   late final ContactService _contactService;
   late Contact _currentContact;
 
-  // Single animation controller for entrance
   late AnimationController _animController;
   late Animation<double> _fadeAnimation;
   late Animation<Offset> _slideAnimation;
 
   static final _backButtonBg = Colors.white.withValues(alpha: 0.1);
   static final _roleBadgeBg = Colors.white.withValues(alpha: 0.1);
-  static final _infoCardBg = Colors.white.withValues(alpha: 0.05);
-  static final _iconBg = Colors.white.withValues(alpha: 0.1);
 
   @override
   void initState() {
@@ -133,14 +130,12 @@ class _ContactDetailsScreenState extends State<ContactDetailsScreen>
       extendBodyBehindAppBar: true,
       body: Stack(
         children: [
-          // 1. Background - const to prevent rebuilds
+          //background
           const _BackgroundGradient(),
 
-          // 2. Main Content
           SafeArea(
             child: Stack(
               children: [
-                // Back Button
                 Positioned(
                   left: 20,
                   top: 10,
@@ -177,7 +172,7 @@ class _ContactDetailsScreenState extends State<ContactDetailsScreen>
                   ),
                 ),
 
-                // Side Actions
+
                 Positioned(
                   right: 20,
                   top: 80,
@@ -208,7 +203,6 @@ class _ContactDetailsScreenState extends State<ContactDetailsScreen>
                   ),
                 ),
 
-                // Main Content
                 Positioned.fill(
                   top: 60,
                   child: Padding(

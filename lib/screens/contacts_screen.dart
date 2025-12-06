@@ -21,12 +21,6 @@ class _ContactsScreenState extends State<ContactsScreen> {
   bool _isSelectionMode = false;
 
 
-  static final _headerBgColor = CupertinoColors.systemGrey.withValues(alpha: 0.15);
-  static final _searchBgColor = Colors.black.withValues(alpha: 0.2);
-  static final _cardNormalBgColor = CupertinoColors.systemGrey.withValues(alpha: 0.1);
-  static final _cardSelectedBgColor = const Color(0xFF8B0000).withValues(alpha: 0.6);
-  static final _bottomBarBgColor = Colors.black.withValues(alpha: 0.6);
-
   @override
   void initState() {
     super.initState();
@@ -462,7 +456,6 @@ class _ContactCard extends StatelessWidget {
   }
 }
 
-// Extracted bottom action bar
 class _BottomActionBar extends StatelessWidget {
   final bool isSelectionMode;
   final bool hasSelection;
@@ -520,7 +513,6 @@ class _BottomActionBar extends StatelessWidget {
   }
 }
 
-// Extracted action button
 class _ActionButton extends StatelessWidget {
   final IconData icon;
   final VoidCallback onTap;
@@ -566,7 +558,6 @@ class _ActionButton extends StatelessWidget {
   }
 }
 
-// Extracted dialog as separate widget
 class _AddContactDialog extends StatelessWidget {
   final TextEditingController nameController;
   final TextEditingController emailController;
@@ -662,7 +653,6 @@ class _AddContactDialog extends StatelessWidget {
   }
 }
 
-// Extracted dialog field
 class _DialogField extends StatelessWidget {
   final TextEditingController controller;
   final String hint;

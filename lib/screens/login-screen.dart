@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/cupertino.dart';
+import 'package:flutter/services.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:juggering/screens/create-account.dart';
 import 'responsive.dart';
@@ -20,28 +21,20 @@ class _LoginScreenState extends State<LoginScreen> with SingleTickerProviderStat
 
   bool _isLoading = false;
   bool _obscurePassword = true;
-  bool _autoValidate = false;
 
   late AnimationController _fadeController;
   late Animation<double> _fadeAnimation;
-
-  static const _primaryRed = Color(0xFFB81C1C);
-  static const _lightRed = Color(0xFFFF8A8A);
-  static final _fieldBgColor = CupertinoColors.systemGrey.withValues(alpha: 0.08);
-  static final _fieldBorderColor = CupertinoColors.systemGrey2.withValues(alpha: 0.25);
-  static final _cardBgColor = CupertinoColors.systemGrey.withValues(alpha:0.25);
-  static final _cardBorderColor = CupertinoColors.systemGrey2.withValues(alpha: 0.4);
 
   @override
   void initState() {
     super.initState();
     _fadeController = AnimationController(
-      duration: const Duration(milliseconds: 300),
+      duration: const Duration(milliseconds: 600),
       vsync: this,
     );
     _fadeAnimation = CurvedAnimation(
       parent: _fadeController,
-      curve: Curves.easeIn,
+      curve: Curves.easeOut,
     );
     _fadeController.forward();
   }
@@ -56,17 +49,12 @@ class _LoginScreenState extends State<LoginScreen> with SingleTickerProviderStat
     super.dispose();
   }
 
-  void _handleLogin() async {
-    // Dismiss keyboard immediately for better UX
+  Future<void> _handleLogin() async {
     FocusScope.of(context).unfocus();
-
-    // Enable validation feedback after first attempt
-    if (!_autoValidate) {
-      setState(() => _autoValidate = true);
-    }
 
     if (_formKey.currentState!.validate()) {
       setState(() => _isLoading = true);
+      HapticFeedback.mediumImpact();
 
       try {
         await FirebaseAuth.instance.signInWithEmailAndPassword(
@@ -74,11 +62,21 @@ class _LoginScreenState extends State<LoginScreen> with SingleTickerProviderStat
           password: _passwordController.text.trim(),
         );
       } on FirebaseAuthException catch (e) {
+        String message = 'Falha no login';
+        if (e.code == 'user-not-found') {
+          message = 'Usuário não encontrado.';
+        } else if (e.code == 'wrong-password') {
+          message = 'Senha incorreta.';
+        } else if (e.code == 'invalid-email') {
+          message = 'E-mail inválido.';
+        }
+
         if (mounted) {
+          HapticFeedback.heavyImpact();
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
-              content: Text(e.message ?? 'Falha no login'),
-              backgroundColor: _primaryRed,
+              content: Text(message),
+              backgroundColor: const Color(0xFFB81C1C),
               behavior: SnackBarBehavior.floating,
               margin: const EdgeInsets.all(16),
               shape: RoundedRectangleBorder(
@@ -90,11 +88,14 @@ class _LoginScreenState extends State<LoginScreen> with SingleTickerProviderStat
       } finally {
         if (mounted) setState(() => _isLoading = false);
       }
+    } else {
+      HapticFeedback.lightImpact();
     }
   }
 
   void _handleForgotPassword() {
     FocusScope.of(context).unfocus();
+    HapticFeedback.selectionClick();
 
     showCupertinoDialog(
       context: context,
@@ -111,7 +112,7 @@ class _LoginScreenState extends State<LoginScreen> with SingleTickerProviderStat
           CupertinoDialogAction(
             isDefaultAction: true,
             onPressed: () {
-              // Handle password reset
+              
               Navigator.pop(context);
             },
             child: const Text('Enviar'),
@@ -122,6 +123,7 @@ class _LoginScreenState extends State<LoginScreen> with SingleTickerProviderStat
   }
 
   void _navigateToSignUp() {
+    HapticFeedback.lightImpact();
     Navigator.of(context).push(
       CupertinoPageRoute(
         builder: (context) => const CreateAccountScreen(),
@@ -134,37 +136,44 @@ class _LoginScreenState extends State<LoginScreen> with SingleTickerProviderStat
     return GestureDetector(
       onTap: () => FocusScope.of(context).unfocus(),
       child: Scaffold(
-        body: _BackgroundGradient(
-          child: Center(
-            child: SingleChildScrollView(
-              padding: const EdgeInsets.symmetric(horizontal: 24.0),
-              keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
-              child: ResponsiveContainer(
-                child: FadeTransition(
-                  opacity: _fadeAnimation,
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      const _LogoSection(),
-                      const SizedBox(height: 32),
-                      const _WelcomeText(),
-                      const SizedBox(height: 48),
-                      _LoginForm(
-                        formKey: _formKey,
-                        emailController: _emailController,
-                        passwordController: _passwordController,
-                        emailFocusNode: _emailFocusNode,
-                        passwordFocusNode: _passwordFocusNode,
-                        obscurePassword: _obscurePassword,
-                        isLoading: _isLoading,
-                        autoValidate: _autoValidate,
-                        onTogglePassword: () => setState(() => _obscurePassword = !_obscurePassword),
-                        onLogin: _handleLogin,
-                        onForgotPassword: _handleForgotPassword,
+        body: AnnotatedRegion<SystemUiOverlayStyle>(
+          value: SystemUiOverlayStyle.light,
+          child: _BackgroundGradient(
+            child: Center(
+              child: SingleChildScrollView(
+                padding: const EdgeInsets.symmetric(horizontal: 24.0),
+                keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
+                child: ResponsiveContainer(
+                  child: FadeTransition(
+                    opacity: _fadeAnimation,
+                    child: AutofillGroup(
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          const _LogoSection(),
+                          const SizedBox(height: 32),
+                          const _WelcomeText(),
+                          const SizedBox(height: 48),
+                          _LoginForm(
+                            formKey: _formKey,
+                            emailController: _emailController,
+                            passwordController: _passwordController,
+                            emailFocusNode: _emailFocusNode,
+                            passwordFocusNode: _passwordFocusNode,
+                            obscurePassword: _obscurePassword,
+                            isLoading: _isLoading,
+                            onTogglePassword: () {
+                              HapticFeedback.selectionClick();
+                              setState(() => _obscurePassword = !_obscurePassword);
+                            },
+                            onLogin: _handleLogin,
+                            onForgotPassword: _handleForgotPassword,
+                          ),
+                          const SizedBox(height: 32),
+                          _SignUpLink(onSignUp: _navigateToSignUp),
+                        ],
                       ),
-                      const SizedBox(height: 32),
-                      _SignUpLink(onSignUp: _navigateToSignUp),
-                    ],
+                    ),
                   ),
                 ),
               ),
@@ -176,7 +185,6 @@ class _LoginScreenState extends State<LoginScreen> with SingleTickerProviderStat
   }
 }
 
-// Extracted gradient as const to prevent rebuilds
 class _BackgroundGradient extends StatelessWidget {
   final Widget child;
 
@@ -190,9 +198,9 @@ class _BackgroundGradient extends StatelessWidget {
           begin: Alignment.topCenter,
           end: Alignment.bottomCenter,
           colors: [
-            Color(0xFF7A1E1E), // Softer red (top)
-            Color(0xFF4A0E0E), // Deep burgundy (middle)
-            Color(0xFF2A0808), // Very dark red (bottom)
+            Color(0xFF7A1E1E),
+            Color(0xFF4A0E0E),
+            Color(0xFF2A0808),
           ],
           stops: [0.0, 0.5, 1.0],
         ),
@@ -202,7 +210,6 @@ class _BackgroundGradient extends StatelessWidget {
   }
 }
 
-// Extracted logo section with const shadow
 class _LogoSection extends StatelessWidget {
   const _LogoSection();
 
@@ -213,7 +220,7 @@ class _LogoSection extends StatelessWidget {
         shape: BoxShape.circle,
         boxShadow: [
           BoxShadow(
-            color: const Color(0xFFB81C1C).withOpacity(0.4),
+            color: const Color(0xFFB81C1C).withValues(alpha: 0.4),
             blurRadius: 20,
             spreadRadius: 2,
           ),
@@ -222,14 +229,15 @@ class _LogoSection extends StatelessWidget {
       child: Image.asset(
         'assets/images/vopec_icon.png',
         height: 100,
-        cacheWidth: 200, // Cache at 2x size for better performance
-        filterQuality: FilterQuality.medium,
+        width: 100,
+        cacheWidth: 200,
+        cacheHeight: 200,
+        filterQuality: FilterQuality.high,
       ),
     );
   }
 }
 
-// Extracted welcome text as const
 class _WelcomeText extends StatelessWidget {
   const _WelcomeText();
 
@@ -242,6 +250,7 @@ class _WelcomeText extends StatelessWidget {
           style: TextStyle(
             color: CupertinoColors.white,
             fontSize: 36,
+            fontFamily: '.SF Pro Display',
             fontWeight: FontWeight.w700,
             letterSpacing: 0.5,
           ),
@@ -253,6 +262,7 @@ class _WelcomeText extends StatelessWidget {
           style: TextStyle(
             color: CupertinoColors.systemGrey3,
             fontSize: 16,
+            fontFamily: '.SF Pro Text',
             fontWeight: FontWeight.w400,
             letterSpacing: 0.2,
           ),
@@ -263,7 +273,6 @@ class _WelcomeText extends StatelessWidget {
   }
 }
 
-// Extracted form into separate widget to isolate rebuilds
 class _LoginForm extends StatelessWidget {
   final GlobalKey<FormState> formKey;
   final TextEditingController emailController;
@@ -272,7 +281,6 @@ class _LoginForm extends StatelessWidget {
   final FocusNode passwordFocusNode;
   final bool obscurePassword;
   final bool isLoading;
-  final bool autoValidate;
   final VoidCallback onTogglePassword;
   final VoidCallback onLogin;
   final VoidCallback onForgotPassword;
@@ -285,18 +293,13 @@ class _LoginForm extends StatelessWidget {
     required this.passwordFocusNode,
     required this.obscurePassword,
     required this.isLoading,
-    required this.autoValidate,
     required this.onTogglePassword,
     required this.onLogin,
     required this.onForgotPassword,
   });
 
-  // Cache colors
-  static final _fieldBgColor = CupertinoColors.systemGrey.withValues(alpha: 0.08);
-  static final _fieldBorderColor = CupertinoColors.systemGrey2.withValues(alpha: 0.25);
   static final _cardBgColor = CupertinoColors.systemGrey.withValues(alpha: 0.25);
   static final _cardBorderColor = CupertinoColors.systemGrey2.withValues(alpha: 0.4);
-  static final _placeholderColor = CupertinoColors.systemGrey.withValues(alpha: 0.6);
 
   @override
   Widget build(BuildContext context) {
@@ -320,80 +323,48 @@ class _LoginForm extends StatelessWidget {
       ),
       child: Form(
         key: formKey,
-        autovalidateMode: autoValidate
-            ? AutovalidateMode.onUserInteraction
-            : AutovalidateMode.disabled,
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            CupertinoTextField(
+            _CustomFormField(
               controller: emailController,
               focusNode: emailFocusNode,
               placeholder: 'E-mail',
               keyboardType: TextInputType.emailAddress,
               textInputAction: TextInputAction.next,
-              padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 14),
-              prefix: const Padding(
-                padding: EdgeInsets.only(left: 14),
-                child: Icon(
-                  CupertinoIcons.mail,
-                  color: Color(0xFFFF8A8A),
-                  size: 18,
-                ),
-              ),
-              decoration: BoxDecoration(
-                color: _fieldBgColor,
-                borderRadius: BorderRadius.circular(12),
-                border: Border.all(color: _fieldBorderColor, width: 1),
-              ),
-              style: const TextStyle(
-                color: CupertinoColors.white,
-                fontSize: 16,
-              ),
-              placeholderStyle: TextStyle(color: _placeholderColor),
-              cursorColor: const Color(0xFFFF8A8A),
-              onSubmitted: (_) => passwordFocusNode.requestFocus(),
+              icon: CupertinoIcons.mail,
+              autofillHints: const [AutofillHints.email],
+              onFieldSubmitted: (_) => passwordFocusNode.requestFocus(),
+              validator: (value) {
+                if (value == null || value.isEmpty) return 'Digite seu e-mail';
+                if (!value.contains('@')) return 'E-mail inválido';
+                return null;
+              },
             ),
             const SizedBox(height: 16),
-            CupertinoTextField(
+            _CustomFormField(
               controller: passwordController,
               focusNode: passwordFocusNode,
               placeholder: 'Senha',
               obscureText: obscurePassword,
               textInputAction: TextInputAction.done,
-              padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 14),
-              prefix: const Padding(
-                padding: EdgeInsets.only(left: 14),
+              icon: CupertinoIcons.lock,
+              autofillHints: const [AutofillHints.password],
+              onFieldSubmitted: (_) => onLogin(),
+              validator: (value) {
+                if (value == null || value.isEmpty) return 'Digite sua senha';
+                if (value.length < 6) return 'Senha muito curta';
+                return null;
+              },
+              suffixIcon: CupertinoButton(
+                padding: EdgeInsets.zero,
+                onPressed: onTogglePassword,
                 child: Icon(
-                  CupertinoIcons.lock,
-                  color: Color(0xFFFF8A8A),
+                  obscurePassword ? CupertinoIcons.eye_slash : CupertinoIcons.eye,
+                  color: const Color(0xFFFF8A8A),
                   size: 18,
                 ),
               ),
-              suffix: CupertinoButton(
-                padding: EdgeInsets.zero,
-                onPressed: onTogglePassword, minimumSize: Size(0, 0),
-                child: Padding(
-                  padding: const EdgeInsets.only(right: 12),
-                  child: Icon(
-                    obscurePassword ? CupertinoIcons.eye_slash : CupertinoIcons.eye,
-                    color: const Color(0xFFFF8A8A),
-                    size: 18,
-                  ),
-                ),
-              ),
-              decoration: BoxDecoration(
-                color: _fieldBgColor,
-                borderRadius: BorderRadius.circular(12),
-                border: Border.all(color: _fieldBorderColor, width: 1),
-              ),
-              style: const TextStyle(
-                color: CupertinoColors.white,
-                fontSize: 16,
-              ),
-              placeholderStyle: TextStyle(color: _placeholderColor),
-              cursorColor: const Color(0xFFFF8A8A),
-              onSubmitted: (_) => onLogin(),
             ),
             const SizedBox(height: 12),
             Align(
@@ -439,6 +410,89 @@ class _LoginForm extends StatelessWidget {
             ),
           ],
         ),
+      ),
+    );
+  }
+}
+
+class _CustomFormField extends StatelessWidget {
+  final TextEditingController controller;
+  final FocusNode focusNode;
+  final String placeholder;
+  final TextInputType keyboardType;
+  final TextInputAction textInputAction;
+  final IconData icon;
+  final bool obscureText;
+  final Widget? suffixIcon;
+  final Iterable<String>? autofillHints;
+  final String? Function(String?)? validator;
+  final Function(String)? onFieldSubmitted;
+
+  const _CustomFormField({
+    required this.controller,
+    required this.focusNode,
+    required this.placeholder,
+    required this.icon,
+    this.keyboardType = TextInputType.text,
+    this.textInputAction = TextInputAction.next,
+    this.obscureText = false,
+    this.suffixIcon,
+    this.autofillHints,
+    this.validator,
+    this.onFieldSubmitted,
+  });
+
+  static final _fieldBgColor = CupertinoColors.systemGrey.withValues(alpha: 0.08);
+  static final _fieldBorderColor = CupertinoColors.systemGrey2.withValues(alpha: 0.25);
+  static final _placeholderColor = CupertinoColors.systemGrey.withValues(alpha: 0.6);
+
+  @override
+  Widget build(BuildContext context) {
+    return TextFormField(
+      controller: controller,
+      focusNode: focusNode,
+      obscureText: obscureText,
+      keyboardType: keyboardType,
+      textInputAction: textInputAction,
+      autofillHints: autofillHints,
+      onFieldSubmitted: onFieldSubmitted,
+      validator: validator,
+      style: const TextStyle(
+        color: CupertinoColors.white,
+        fontSize: 16,
+      ),
+      cursorColor: const Color(0xFFFF8A8A),
+      decoration: InputDecoration(
+        hintText: placeholder,
+        hintStyle: TextStyle(color: _placeholderColor, fontSize: 16),
+        filled: true,
+        fillColor: _fieldBgColor,
+        contentPadding: const EdgeInsets.symmetric(vertical: 14, horizontal: 14),
+        prefixIcon: Padding(
+          padding: const EdgeInsets.only(left: 14, right: 10),
+          child: Icon(icon, color: const Color(0xFFFF8A8A), size: 18),
+        ),
+        prefixIconConstraints: const BoxConstraints(minWidth: 40),
+        suffixIcon: suffixIcon != null
+            ? Padding(padding: const EdgeInsets.only(right: 8), child: suffixIcon)
+            : null,
+        border: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(12),
+          borderSide: BorderSide(color: _fieldBorderColor, width: 1),
+        ),
+        enabledBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(12),
+          borderSide: BorderSide(color: _fieldBorderColor, width: 1),
+        ),
+        focusedBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(12),
+          borderSide: const BorderSide(color: Color(0xFFFF8A8A), width: 1),
+        ),
+        errorBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(12),
+          borderSide: const BorderSide(color: Color(0xFFFF453A), width: 1),
+        ),
+        errorStyle: const TextStyle(color: Color(0xFFFF453A), fontSize: 12),
       ),
     );
   }

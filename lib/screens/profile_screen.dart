@@ -1,6 +1,7 @@
 import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:flutter/cupertino.dart';
+import 'package:flutter/services.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 
@@ -15,7 +16,6 @@ class _ProfileScreenState extends State<ProfileScreen>
     with SingleTickerProviderStateMixin {
   late User? _user;
 
-  // BOILERPLATE DE STATUS
   String _role = 'DESENVOLVEDOR';
   String _phone = '+55 (11) 99999-9999';
   bool _isLoading = true;
@@ -25,17 +25,12 @@ class _ProfileScreenState extends State<ProfileScreen>
   late Animation<double> _fadeAnimation;
   late Animation<Offset> _slideAnimation;
 
-  // CORES JA SALVAS NO CACHE PARA EVITAR REDUNDANCIA
   static final _backButtonBg = Colors.white.withValues(alpha: 0.1);
   static final _roleBadgeBg = Colors.white.withValues(alpha: 0.1);
-  static final _infoCardBg = Colors.white.withValues(alpha: 0.05);
-  static final _iconBg = Colors.white.withValues(alpha: 0.1);
-  static final _dialogBg = const Color(0xFF2C2C2C).withValues(alpha: 0.92);
 
   @override
   void initState() {
     super.initState();
-    _enableHighRefreshRate();
     _user = FirebaseAuth.instance.currentUser;
     _loadUserProfile();
 
@@ -60,7 +55,12 @@ class _ProfileScreenState extends State<ProfileScreen>
     _animController.forward();
   }
 
-  // ERROR HANDLE
+  @override
+  void dispose() {
+    _animController.dispose();
+    super.dispose();
+  }
+
   Future<void> _loadUserProfile() async {
     if (_user == null) {
       if (mounted) setState(() => _isLoading = false);
@@ -87,11 +87,10 @@ class _ProfileScreenState extends State<ProfileScreen>
           });
         } else {
           await _createDefaultProfile();
-          setState(() => _isLoading = false);
+          if (mounted) setState(() => _isLoading = false);
         }
       }
     } catch (e) {
-      debugPrint("Error loading profile: $e");
       if (mounted) {
         setState(() => _isLoading = false);
         ScaffoldMessenger.of(context).showSnackBar(
@@ -117,77 +116,41 @@ class _ProfileScreenState extends State<ProfileScreen>
     }
   }
 
-  @override
-  void dispose() {
-    _animController.dispose();
-    super.dispose();
-  }
-
-  void _enableHighRefreshRate() {
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      // suporte para tela 120hz
-    });
-  }
-
   void _handleLogout() async {
+    HapticFeedback.mediumImpact();
     await FirebaseAuth.instance.signOut();
     if (mounted) Navigator.pop(context);
   }
 
-  // EDIT
   void _handleEdit() {
-    final nameCtrl = TextEditingController(
-      text: _user?.displayName ?? 'Polaris',
-    );
-    final roleCtrl = TextEditingController(text: _role);
-    final phoneCtrl = TextEditingController(text: _phone);
-
+    HapticFeedback.selectionClick();
     showDialog(
       context: context,
       barrierColor: Colors.black.withValues(alpha: 0.6),
       builder: (ctx) => _EditProfileDialog(
-        nameController: nameCtrl,
-        roleController: roleCtrl,
-        phoneController: phoneCtrl,
-        isSaving: _isSaving,
-        onSave: () async {
-          if (_isSaving) return; //EVITA SALVAR DUAS VEZES A MESMA COISA
-
-          setState(() => _isSaving = true);
-          await _saveProfile(
-            nameCtrl.text,
-            roleCtrl.text,
-            phoneCtrl.text,
-          );
-          setState(() => _isSaving = false);
-
-          if (ctx.mounted) Navigator.pop(ctx);
+        initialName: _user?.displayName ?? 'Polaris',
+        initialRole: _role,
+        initialPhone: _phone,
+        onSave: (newName, newRole, newPhone) async {
+          await _saveProfile(newName, newRole, newPhone);
         },
       ),
     );
   }
 
   Future<void> _saveProfile(String newName, String newRole, String newPhone) async {
-    if (_user == null) return;
+    if (_user == null || _isSaving) return;
+
+    setState(() => _isSaving = true);
+    HapticFeedback.lightImpact();
 
     try {
-      // VALIDA OS INPUTS DO USER AO TENTAR MUDAR O NOME
-      if (newName.trim().isEmpty) {
-        throw Exception('Nome não pode estar vazio');
-      }
-      if (newRole.trim().isEmpty) {
-        throw Exception('Cargo não pode estar vazio');
-      }
-
-      // UPDATE DO NOME
-      final trimmedName = newName.trim();
-      if (trimmedName != _user!.displayName) {
-        await _user!.updateDisplayName(trimmedName);
+      if (newName.trim() != _user!.displayName) {
+        await _user!.updateDisplayName(newName.trim());
         await _user!.reload();
         _user = FirebaseAuth.instance.currentUser;
       }
 
-      // UPDATE NO FIREBASE
       await FirebaseFirestore.instance
           .collection('users')
           .doc(_user!.uid)
@@ -197,28 +160,34 @@ class _ProfileScreenState extends State<ProfileScreen>
         'lastUpdated': FieldValue.serverTimestamp(),
       }, SetOptions(merge: true));
 
-      // UPDATE LOCAL STATE (FEEDBACK)
       if (mounted) {
         setState(() {
           _role = newRole.trim();
           _phone = newPhone.trim();
+          _isSaving = false;
         });
+
+        Navigator.pop(context);
+
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
-            content: Text('Perfil atualizado com sucesso!'),
+            content: Text(
+              'Perfil atualizado com sucesso!',
+              style: TextStyle(fontFamily: '.SF Pro Text'),
+            ),
             backgroundColor: Colors.green,
+            behavior: SnackBarBehavior.floating,
             duration: Duration(seconds: 2),
           ),
         );
       }
     } catch (e) {
-      debugPrint("Error saving profile: $e");
       if (mounted) {
+        setState(() => _isSaving = false);
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text('Erro ao atualizar: ${e.toString()}'),
             backgroundColor: Colors.redAccent,
-            duration: const Duration(seconds: 3),
           ),
         );
       }
@@ -238,214 +207,215 @@ class _ProfileScreenState extends State<ProfileScreen>
 
     return Scaffold(
       extendBodyBehindAppBar: true,
-      body: Stack(
-        children: [
-          const _BackgroundGradient(),
+      body: AnnotatedRegion<SystemUiOverlayStyle>(
+        value: SystemUiOverlayStyle.light,
+        child: Stack(
+          children: [
+            const _BackgroundGradient(),
 
-          SafeArea(
-            child: Stack(
-              children: [
-                // BOTAO DE VOLTAR
-                Positioned(
-                  left: 20,
-                  top: 10,
-                  child: _SimpleButton(
-                    onTap: () => Navigator.pop(context),
-                    child: ClipRRect(
-                      borderRadius: BorderRadius.circular(15),
-                      child: BackdropFilter(
-                        filter: ImageFilter.blur(sigmaX: 8, sigmaY: 8),
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 16,
-                            vertical: 12,
-                          ),
-                          decoration: BoxDecoration(
-                            color: _backButtonBg,
-                            borderRadius: BorderRadius.circular(15),
-                            border: Border.all(color: Colors.white24),
-                            boxShadow: [
-                              BoxShadow(
-                                color: Colors.black.withValues(alpha: 0.2),
-                                blurRadius: 8,
-                                offset: const Offset(0, 2),
-                              ),
-                            ],
-                          ),
-                          child: const Row(
-                            children: [
-                              Icon(
-                                CupertinoIcons.chevron_back,
-                                color: Colors.white,
-                                size: 20,
-                              ),
-                              SizedBox(width: 4),
-                              Text(
-                                'Voltar',
-                                style: TextStyle(
-                                  color: Colors.white,
-                                  fontWeight: FontWeight.w600,
-                                  fontFamily: '.SF Pro Text',
+            SafeArea(
+              child: Stack(
+                children: [
+                  Positioned(
+                    left: 20,
+                    top: 10,
+                    child: _SimpleButton(
+                      onTap: () {
+                        HapticFeedback.lightImpact();
+                        Navigator.pop(context);
+                      },
+                      child: ClipRRect(
+                        borderRadius: BorderRadius.circular(15),
+                        child: BackdropFilter(
+                          filter: ImageFilter.blur(sigmaX: 8, sigmaY: 8),
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 16,
+                              vertical: 12,
+                            ),
+                            decoration: BoxDecoration(
+                              color: _backButtonBg,
+                              borderRadius: BorderRadius.circular(15),
+                              border: Border.all(color: Colors.white24),
+                              boxShadow: [
+                                BoxShadow(
+                                  color: Colors.black.withValues(alpha: 0.2),
+                                  blurRadius: 8,
+                                  offset: const Offset(0, 2),
                                 ),
-                              ),
-                            ],
+                              ],
+                            ),
+                            child: const Row(
+                              children: [
+                                Icon(
+                                  CupertinoIcons.chevron_back,
+                                  color: Colors.white,
+                                  size: 20,
+                                ),
+                                SizedBox(width: 4),
+                                Text(
+                                  'Voltar',
+                                  style: TextStyle(
+                                    color: Colors.white,
+                                    fontWeight: FontWeight.w600,
+                                    fontFamily: '.SF Pro Text',
+                                  ),
+                                ),
+                              ],
+                            ),
                           ),
                         ),
                       ),
                     ),
                   ),
-                ),
 
-                Positioned(
-                  right: 20,
-                  top: 80,
-                  child: FadeTransition(
-                    opacity: _fadeAnimation,
-                    child: Column(
-                      children: [
-                        _SideActionButton(
-                          label: 'Editar',
-                          icon: CupertinoIcons.pencil,
-                          color: Colors.blueAccent,
-                          onTap: _handleEdit,
-                        ),
-                        const SizedBox(height: 16),
-                        _SideActionButton(
-                          label: 'Logout',
-                          icon: CupertinoIcons.square_arrow_right,
-                          color: Colors.redAccent,
-                          onTap: _handleLogout,
-                        ),
-                      ],
+                  Positioned(
+                    right: 20,
+                    top: 80,
+                    child: FadeTransition(
+                      opacity: _fadeAnimation,
+                      child: Column(
+                        children: [
+                          _SideActionButton(
+                            label: 'Editar',
+                            icon: CupertinoIcons.pencil,
+                            color: Colors.blueAccent,
+                            onTap: _handleEdit,
+                          ),
+                          const SizedBox(height: 16),
+                          _SideActionButton(
+                            label: 'Logout',
+                            icon: CupertinoIcons.square_arrow_right,
+                            color: Colors.redAccent,
+                            onTap: _handleLogout,
+                          ),
+                        ],
+                      ),
                     ),
                   ),
-                ),
 
-                // Main Content
-                Positioned.fill(
-                  top: 60,
-                  child: Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 40),
-                    child: SlideTransition(
-                      position: _slideAnimation,
-                      child: FadeTransition(
-                        opacity: _fadeAnimation,
-                        child: _isLoading
-                            ? const Center(
-                          child: Column(
+                  Positioned.fill(
+                    top: 60,
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 40),
+                      child: SlideTransition(
+                        position: _slideAnimation,
+                        child: FadeTransition(
+                          opacity: _fadeAnimation,
+                          child: _isLoading
+                              ? const Center(
+                            child: Column(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                CupertinoActivityIndicator(
+                                  color: Colors.white,
+                                  radius: 20,
+                                ),
+                                SizedBox(height: 16),
+                                Text(
+                                  'Carregando perfil...',
+                                  style: TextStyle(
+                                    color: Colors.white70,
+                                    fontSize: 14,
+                                    fontFamily: '.SF Pro Text',
+                                  ),
+                                ),
+                              ],
+                            ),
+                          )
+                              : Column(
                             mainAxisAlignment: MainAxisAlignment.center,
                             children: [
-                              CupertinoActivityIndicator(
-                                color: Colors.white,
-                                radius: 20,
+                              _ProfileAvatar(
+                                userId: _user?.uid ?? 'default',
                               ),
-                              SizedBox(height: 16),
+                              const SizedBox(height: 30),
+
                               Text(
-                                'Carregando perfil...',
-                                style: TextStyle(
-                                  color: Colors.white70,
-                                  fontSize: 14,
-                                  fontFamily: '.SF Pro Text',
+                                displayName.toUpperCase(),
+                                textAlign: TextAlign.center,
+                                style: iosFont.copyWith(
+                                  fontSize: 28,
+                                  letterSpacing: 1.5,
+                                  fontWeight: FontWeight.bold,
+                                  shadows: const [
+                                    Shadow(
+                                      color: Colors.black45,
+                                      blurRadius: 10,
+                                      offset: Offset(0, 5),
+                                    )
+                                  ],
                                 ),
+                              ),
+
+                              const SizedBox(height: 12),
+                              Container(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 16,
+                                  vertical: 6,
+                                ),
+                                decoration: BoxDecoration(
+                                  color: _roleBadgeBg,
+                                  borderRadius: BorderRadius.circular(20),
+                                  border: Border.all(color: Colors.white10),
+                                ),
+                                child: Text(
+                                  _role.toUpperCase(),
+                                  style: iosFont.copyWith(
+                                    color: Colors.white70,
+                                    fontSize: 12,
+                                    letterSpacing: 1,
+                                  ),
+                                ),
+                              ),
+
+                              const SizedBox(height: 60),
+
+                              _InfoCard(
+                                label: 'EMAIL',
+                                value: _user?.email ?? '---',
+                                icon: CupertinoIcons.mail_solid,
+                              ),
+                              const SizedBox(height: 16),
+                              _InfoCard(
+                                label: 'TELEFONE',
+                                value: _phone,
+                                icon: CupertinoIcons.phone_fill,
+                              ),
+                              const SizedBox(height: 16),
+                              _InfoCard(
+                                label: 'UID',
+                                value: _user?.uid.length != null && _user!.uid.length > 8
+                                    ? _user!.uid.substring(0, 8)
+                                    : _user?.uid ?? '---',
+                                icon: CupertinoIcons.barcode,
                               ),
                             ],
                           ),
-                        )
-                            : Column(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            _ProfileAvatar(
-                              userId: _user?.uid ?? 'default',
-                            ),
-                            const SizedBox(height: 30),
-
-                            // NOME
-                            Text(
-                              displayName.toUpperCase(),
-                              textAlign: TextAlign.center,
-                              style: iosFont.copyWith(
-                                fontSize: 28,
-                                letterSpacing: 1.5,
-                                fontWeight: FontWeight.bold,
-                                shadows: const [
-                                  Shadow(
-                                    color: Colors.black45,
-                                    blurRadius: 10,
-                                    offset: Offset(0, 5),
-                                  )
-                                ],
-                              ),
-                            ),
-
-                            // ABA DE CARGO
-                            const SizedBox(height: 12),
-                            Container(
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 16,
-                                vertical: 6,
-                              ),
-                              decoration: BoxDecoration(
-                                color: _roleBadgeBg,
-                                borderRadius: BorderRadius.circular(20),
-                                border: Border.all(color: Colors.white10),
-                              ),
-                              child: Text(
-                                _role.toUpperCase(),
-                                style: iosFont.copyWith(
-                                  color: Colors.white70,
-                                  fontSize: 12,
-                                  letterSpacing: 1,
-                                ),
-                              ),
-                            ),
-
-                            const SizedBox(height: 60),
-
-                            // Info Cards
-                            _InfoCard(
-                              label: 'EMAIL',
-                              value: _user?.email ?? '---',
-                              icon: CupertinoIcons.mail_solid,
-                            ),
-                            const SizedBox(height: 16),
-                            _InfoCard(
-                              label: 'TELEFONE',
-                              value: _phone,
-                              icon: CupertinoIcons.phone_fill,
-                            ),
-                            const SizedBox(height: 16),
-                            _InfoCard(
-                              label: 'UID',
-                              value: _user?.uid.substring(0, 8) ?? '---',
-                              icon: CupertinoIcons.barcode,
-                            ),
-                          ],
                         ),
                       ),
                     ),
                   ),
-                ),
-              ],
+                ],
+              ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }
 }
 
 class _EditProfileDialog extends StatefulWidget {
-  final TextEditingController nameController;
-  final TextEditingController roleController;
-  final TextEditingController phoneController;
-  final bool isSaving;
-  final VoidCallback onSave;
+  final String initialName;
+  final String initialRole;
+  final String initialPhone;
+  final Function(String, String, String) onSave;
 
   const _EditProfileDialog({
-    required this.nameController,
-    required this.roleController,
-    required this.phoneController,
-    required this.isSaving,
+    required this.initialName,
+    required this.initialRole,
+    required this.initialPhone,
     required this.onSave,
   });
 
@@ -454,12 +424,39 @@ class _EditProfileDialog extends StatefulWidget {
 }
 
 class _EditProfileDialogState extends State<_EditProfileDialog> {
+  final _formKey = GlobalKey<FormState>();
+  late TextEditingController _nameController;
+  late TextEditingController _roleController;
+  late TextEditingController _phoneController;
+  bool _isSaving = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _nameController = TextEditingController(text: widget.initialName);
+    _roleController = TextEditingController(text: widget.initialRole);
+    _phoneController = TextEditingController(text: widget.initialPhone);
+  }
+
   @override
   void dispose() {
-    widget.nameController.dispose();
-    widget.roleController.dispose();
-    widget.phoneController.dispose();
+    _nameController.dispose();
+    _roleController.dispose();
+    _phoneController.dispose();
     super.dispose();
+  }
+
+  void _handleSubmit() async {
+    if (_formKey.currentState!.validate()) {
+      setState(() => _isSaving = true);
+      await widget.onSave(
+          _nameController.text,
+          _roleController.text,
+          _phoneController.text
+      );
+    } else {
+      HapticFeedback.heavyImpact();
+    }
   }
 
   @override
@@ -487,95 +484,105 @@ class _EditProfileDialogState extends State<_EditProfileDialog> {
                 ),
               ],
             ),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                const Text(
-                  'Editar Perfil',
-                  style: TextStyle(
-                    color: Colors.white,
-                    fontSize: 20,
-                    fontWeight: FontWeight.bold,
-                    fontFamily: '.SF Pro Text',
-                  ),
-                ),
-                const SizedBox(height: 24),
-
-                // BOTOES DE EDITAR
-                _DialogTextField(
-                  controller: widget.nameController,
-                  hint: 'Nome',
-                  icon: CupertinoIcons.person,
-                ),
-                const SizedBox(height: 12),
-                _DialogTextField(
-                  controller: widget.roleController,
-                  hint: 'Cargo',
-                  icon: CupertinoIcons.briefcase,
-                ),
-                const SizedBox(height: 12),
-                _DialogTextField(
-                  controller: widget.phoneController,
-                  hint: 'Telefone',
-                  icon: CupertinoIcons.phone,
-                  type: TextInputType.phone,
-                ),
-
-                const SizedBox(height: 24),
-
-                // BOTOES DE CANCELAR E SALVAR
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.end,
-                  children: [
-                    CupertinoButton(
-                      onPressed: widget.isSaving
-                          ? null
-                          : () => Navigator.pop(context),
-                      child: Text(
-                        'Cancelar',
-                        style: TextStyle(
-                          color: widget.isSaving
-                              ? Colors.white.withValues(alpha: 0.3)
-                              : Colors.white.withValues(alpha: 0.6),
-                        ),
-                      ),
+            child: Form(
+              key: _formKey,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Text(
+                    'Editar Perfil',
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontSize: 20,
+                      fontWeight: FontWeight.bold,
+                      fontFamily: '.SF Pro Text',
                     ),
-                    const SizedBox(width: 8),
-                    ElevatedButton(
-                      onPressed: widget.isSaving ? null : widget.onSave,
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: Colors.blueAccent,
-                        disabledBackgroundColor: Colors.blueGrey,
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 24,
-                          vertical: 12,
-                        ),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                      ),
-                      child: widget.isSaving
-                          ? const SizedBox(
-                        width: 16,
-                        height: 16,
-                        child: CircularProgressIndicator(
-                          strokeWidth: 2,
-                          valueColor: AlwaysStoppedAnimation<Color>(
-                            Colors.white,
+                  ),
+                  const SizedBox(height: 24),
+
+                  _DialogTextField(
+                    controller: _nameController,
+                    hint: 'Nome',
+                    icon: CupertinoIcons.person,
+                    textCapitalization: TextCapitalization.words,
+                    textInputAction: TextInputAction.next,
+                    validator: (value) => value == null || value.trim().isEmpty ? 'Nome obrigatório' : null,
+                  ),
+                  const SizedBox(height: 12),
+                  _DialogTextField(
+                    controller: _roleController,
+                    hint: 'Cargo',
+                    icon: CupertinoIcons.briefcase,
+                    textCapitalization: TextCapitalization.sentences,
+                    textInputAction: TextInputAction.next,
+                    validator: (value) => value == null || value.trim().isEmpty ? 'Cargo obrigatório' : null,
+                  ),
+                  const SizedBox(height: 12),
+                  _DialogTextField(
+                    controller: _phoneController,
+                    hint: 'Telefone',
+                    icon: CupertinoIcons.phone,
+                    type: TextInputType.phone,
+                    textInputAction: TextInputAction.done,
+                    onFieldSubmitted: (_) => _handleSubmit(),
+                    validator: (value) => value == null || value.trim().isEmpty ? 'Telefone obrigatório' : null,
+                  ),
+
+                  const SizedBox(height: 24),
+
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.end,
+                    children: [
+                      CupertinoButton(
+                        onPressed: _isSaving
+                            ? null
+                            : () => Navigator.pop(context),
+                        child: Text(
+                          'Cancelar',
+                          style: TextStyle(
+                            color: _isSaving
+                                ? Colors.white.withValues(alpha: 0.3)
+                                : Colors.white.withValues(alpha: 0.6),
                           ),
                         ),
-                      )
-                          : const Text(
-                        'Salvar',
-                        style: TextStyle(
-                          color: Colors.white,
-                          fontWeight: FontWeight.bold,
+                      ),
+                      const SizedBox(width: 8),
+                      ElevatedButton(
+                        onPressed: _isSaving ? null : _handleSubmit,
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: Colors.blueAccent,
+                          disabledBackgroundColor: Colors.blueGrey,
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 24,
+                            vertical: 12,
+                          ),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                        ),
+                        child: _isSaving
+                            ? const SizedBox(
+                          width: 16,
+                          height: 16,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            valueColor: AlwaysStoppedAnimation<Color>(
+                              Colors.white,
+                            ),
+                          ),
+                        )
+                            : const Text(
+                          'Salvar',
+                          style: TextStyle(
+                            color: Colors.white,
+                            fontWeight: FontWeight.bold,
+                          ),
                         ),
                       ),
-                    ),
-                  ],
-                ),
-              ],
+                    ],
+                  ),
+                ],
+              ),
             ),
           ),
         ),
@@ -584,50 +591,72 @@ class _EditProfileDialogState extends State<_EditProfileDialog> {
   }
 }
 
-// DIALOGO DO TEXT FIELD
 class _DialogTextField extends StatelessWidget {
   final TextEditingController controller;
   final String hint;
   final IconData icon;
   final TextInputType type;
+  final TextInputAction textInputAction;
+  final TextCapitalization textCapitalization;
+  final Function(String)? onFieldSubmitted;
+  final String? Function(String?)? validator;
 
   const _DialogTextField({
     required this.controller,
     required this.hint,
     required this.icon,
     this.type = TextInputType.text,
+    this.textInputAction = TextInputAction.done,
+    this.textCapitalization = TextCapitalization.none,
+    this.onFieldSubmitted,
+    this.validator,
   });
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      decoration: BoxDecoration(
-        color: Colors.white.withValues(alpha: 0.05),
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: Colors.white.withValues(alpha: 0.1)),
-      ),
-      child: TextField(
-        controller: controller,
-        keyboardType: type,
-        style: const TextStyle(color: Colors.white),
-        decoration: InputDecoration(
-          prefixIcon: Icon(icon, color: Colors.white54, size: 20),
-          hintText: hint,
-          hintStyle: TextStyle(
-            color: Colors.white.withValues(alpha: 0.3),
-          ),
-          border: InputBorder.none,
-          contentPadding: const EdgeInsets.symmetric(
-            horizontal: 16,
-            vertical: 14,
-          ),
+    return TextFormField(
+      controller: controller,
+      keyboardType: type,
+      textInputAction: textInputAction,
+      textCapitalization: textCapitalization,
+      onFieldSubmitted: onFieldSubmitted,
+      validator: validator,
+      style: const TextStyle(color: Colors.white),
+      cursorColor: Colors.blueAccent,
+      decoration: InputDecoration(
+        filled: true,
+        fillColor: Colors.white.withValues(alpha: 0.05),
+        prefixIcon: Icon(icon, color: Colors.white54, size: 20),
+        hintText: hint,
+        hintStyle: TextStyle(
+          color: Colors.white.withValues(alpha: 0.3),
         ),
+        contentPadding: const EdgeInsets.symmetric(
+          horizontal: 16,
+          vertical: 14,
+        ),
+        border: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(12),
+          borderSide: BorderSide(color: Colors.white.withValues(alpha: 0.1)),
+        ),
+        enabledBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(12),
+          borderSide: BorderSide(color: Colors.white.withValues(alpha: 0.1)),
+        ),
+        focusedBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(12),
+          borderSide: const BorderSide(color: Colors.blueAccent),
+        ),
+        errorBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(12),
+          borderSide: const BorderSide(color: Colors.redAccent),
+        ),
+        errorStyle: const TextStyle(color: Colors.redAccent, fontSize: 12),
       ),
     );
   }
 }
 
-// GRADIENTE DO BACKGROUND
 class _BackgroundGradient extends StatelessWidget {
   const _BackgroundGradient();
 
@@ -645,7 +674,6 @@ class _BackgroundGradient extends StatelessWidget {
   }
 }
 
-// FOTO DE PERFIL DO USER
 class _ProfileAvatar extends StatelessWidget {
   final String userId;
 
@@ -678,8 +706,9 @@ class _ProfileAvatar extends StatelessWidget {
               ),
             ],
             image: const DecorationImage(
-              image: AssetImage('assets/images/user.png'), //NO MOMENTO USANDO UM PLACEHOLDER
+              image: AssetImage('assets/images/user.png'),
               fit: BoxFit.cover,
+              filterQuality: FilterQuality.high,
             ),
           ),
         ),
@@ -688,7 +717,6 @@ class _ProfileAvatar extends StatelessWidget {
   }
 }
 
-// SIDE BUTTON
 class _SideActionButton extends StatelessWidget {
   final String label;
   final IconData icon;
@@ -747,7 +775,6 @@ class _SideActionButton extends StatelessWidget {
     );
   }
 }
-
 
 class _InfoCard extends StatelessWidget {
   final String label;
@@ -831,7 +858,6 @@ class _InfoCard extends StatelessWidget {
   }
 }
 
-// Simple button
 class _SimpleButton extends StatelessWidget {
   final Widget child;
   final VoidCallback onTap;

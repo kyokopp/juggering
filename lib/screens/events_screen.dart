@@ -16,13 +16,12 @@ class _EventsScreenState extends State<EventsScreen> with TickerProviderStateMix
   final EventService _eventService = EventService();
   DateTime _focusedDay = DateTime.now();
 
-  // Animation for list items
   late AnimationController _fadeController;
 
   @override
   void initState() {
     super.initState();
-    WidgetsBinding.instance.addPostFrameCallback((_) {}); // 120Hz support
+    WidgetsBinding.instance.addPostFrameCallback((_) {});
     _fadeController = AnimationController(duration: const Duration(milliseconds: 600), vsync: this);
     _fadeController.forward();
   }
@@ -33,16 +32,12 @@ class _EventsScreenState extends State<EventsScreen> with TickerProviderStateMix
     super.dispose();
   }
 
-  // --- CALENDAR LOGIC ---
   List<DateTime> _getDaysInMonth(DateTime month) {
     final firstDay = DateTime(month.year, month.month, 1);
     final lastDay = DateTime(month.year, month.month + 1, 0);
     final days = <DateTime>[];
 
-    // Add padding days from previous month
-    final firstWeekday = firstDay.weekday; // 1=Mon, 7=Sun
-    // Adjust so Sunday is 0 or user preference. Let's start Monday (1).
-    // If 1st is Wed (3), we need 2 padding days (Mon, Tue).
+    final firstWeekday = firstDay.weekday;
     for (int i = 1; i < firstWeekday; i++) {
       days.add(firstDay.subtract(Duration(days: firstWeekday - i)));
     }
@@ -57,7 +52,6 @@ class _EventsScreenState extends State<EventsScreen> with TickerProviderStateMix
     return a.year == b.year && a.month == b.month && a.day == b.day;
   }
 
-  // --- UI BUILD ---
   @override
   Widget build(BuildContext context) {
     const iosFont = TextStyle(fontFamily: '.SF Pro Text', color: Colors.white);
@@ -94,10 +88,8 @@ class _EventsScreenState extends State<EventsScreen> with TickerProviderStateMix
 
               return Column(
                 children: [
-                  // Month Selector
                   _buildMonthSelector(iosFont),
 
-                  // Calendar Grid
                   Expanded(
                     child: Padding(
                       padding: const EdgeInsets.symmetric(horizontal: 16.0),
@@ -152,7 +144,6 @@ class _EventsScreenState extends State<EventsScreen> with TickerProviderStateMix
     );
   }
 
-  // --- WIDGET HELPERS ---
 
   Widget _buildMonthSelector(TextStyle font) {
     return Padding(
@@ -228,18 +219,15 @@ class _EventsScreenState extends State<EventsScreen> with TickerProviderStateMix
     );
   }
 
-  // --- INTERACTION LOGIC ---
 
   void _handleDayTap(DateTime date, List<Event> events) {
     if (events.isEmpty) {
-      // Create new event
       showDialog(
         context: context,
         barrierColor: Colors.black.withValues(alpha: 0.7),
         builder: (context) => EventDialog(date: date),
       );
     } else {
-      // Show events list
       showModalBottomSheet(
         context: context,
         backgroundColor: Colors.transparent,
@@ -272,7 +260,7 @@ class _EventsScreenState extends State<EventsScreen> with TickerProviderStateMix
               const SizedBox(height: 16),
               ...events.map((e) => GestureDetector(
                 onTap: () {
-                  Navigator.pop(context); // Close sheet
+                  Navigator.pop(context);
                   showDialog(
                     context: context,
                     barrierColor: Colors.black.withValues(alpha: 0.7),
@@ -310,9 +298,8 @@ class _EventsScreenState extends State<EventsScreen> with TickerProviderStateMix
                     ],
                   ),
                 ),
-              )).toList(),
+              )),
 
-              // Add another event button
               CupertinoButton(
                 padding: EdgeInsets.zero,
                 child: Row(
@@ -340,10 +327,9 @@ class _EventsScreenState extends State<EventsScreen> with TickerProviderStateMix
   }
 }
 
-// --- ADD/EDIT EVENT POPUP ---
 class EventDialog extends StatefulWidget {
   final DateTime date;
-  final Event? event; // Null = Create, Not Null = Edit
+  final Event? event;
 
   const EventDialog({super.key, required this.date, this.event});
 
@@ -372,7 +358,7 @@ class _EventDialogState extends State<EventDialog> {
     final daysUntil = widget.date.difference(DateTime.now()).inDays;
     String timeText = daysUntil == 0
         ? 'Hoje'
-        : (daysUntil > 0 ? 'Faltam $daysUntil dias' : 'Passou há ${daysUntil.abs()} dias');
+        : (daysUntil > 0 ? 'Faltam $daysUntil dias' : 'Passu há ${daysUntil.abs()} dias');
 
     return Center(
       child: Material(
@@ -473,7 +459,7 @@ class _EventDialogState extends State<EventDialog> {
         style: const TextStyle(color: Colors.white),
         decoration: InputDecoration(
           prefixIcon: Padding(
-            padding: const EdgeInsets.only(left: 10, top: 12), // Align icon for multiline
+            padding: const EdgeInsets.only(left: 10, top: 12),
             child: Icon(icon, color: Colors.white54, size: 20),
           ),
           hintText: hint,
